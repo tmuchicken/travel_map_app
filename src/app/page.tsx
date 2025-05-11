@@ -2,7 +2,7 @@
 "use client";
 
 import dynamic from 'next/dynamic';
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import Header from '@/components/Header';
 import ControlPanel from '@/components/ControlPanel';
 import AnimationControls from '@/components/AnimationControls';
@@ -15,13 +15,12 @@ export interface LocationPoint {
   transport: string;
   lat?: number;
   lng?: number;
-  error?: string; // ジオコーディングエラーメッセージ用
+  error?: string;
 }
 
 export interface TransportOption {
   name: string;
   label: string;
-  // icon?: React.JSX.Element; // Map.tsxでアイコンを生成するため、ここでは必須としない
 }
 
 const MapWithNoSSR = dynamic(() => import('@/components/Map'), {
@@ -45,6 +44,18 @@ export default function HomePage() {
   ]);
 
   const [geocodingState, setGeocodingState] = useState<Record<string, 'idle' | 'loading' | 'error'>>({});
+
+  // Animation State
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentSegmentIndex, setCurrentSegmentIndex] = useState(0); // 最初は0番目の区間から
+  const [animationSpeed, setAnimationSpeed] = useState(1); // 1倍速
+
+  // 経路情報が変更されたらアニメーションをリセット
+  useEffect(() => {
+    setIsPlaying(false);
+    setCurrentSegmentIndex(0);
+  }, [locations]);
+
 
   const handleLocationNameChange = useCallback((id: string, newName: string) => {
     setLocations(prevLocations =>
@@ -80,32 +91,20 @@ export default function HomePage() {
 
   const handleGeocodeLocation = useCallback(async (locationId: string, locationName: string) => {
     if (!locationName.trim()) {
-      console.log(`Geocoding skipped for ${locationId}: name is empty.`);
       setLocations(prevLocations =>
         prevLocations.map(loc => (loc.id === locationId ? { ...loc, lat: undefined, lng: undefined, error: undefined } : loc))
       );
       setGeocodingState(prev => ({...prev, [locationId]: 'idle'}));
       return;
     }
-
-    console.log(`Geocoding for ${locationId}: ${locationName}`);
     setGeocodingState(prev => ({...prev, [locationId]: 'loading'}));
-
     try {
       const apiUrl = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(locationName)}&format=jsonv2&limit=1`;
-      // User-Agentヘッダーの指定 (実際のアプリ名と連絡先に置き換えてください)
       const response = await fetch(apiUrl, { headers: { 'User-Agent': 'TravelRouteApp/1.0 (your-contact-email@example.com)' } });
-
-
-      if (!response.ok) {
-        throw new Error(`Nominatim API request failed: ${response.statusText}`);
-      }
-
+      if (!response.ok) throw new Error(`Nominatim API error: ${response.statusText}`);
       const data = await response.json();
-
       if (data && data.length > 0) {
         const { lat, lon } = data[0];
-        console.log(`Geocoded ${locationId} (${locationName}) to: lat=${parseFloat(lat)}, lng=${parseFloat(lon)}`);
         setLocations(prevLocations =>
           prevLocations.map(loc =>
             loc.id === locationId ? { ...loc, lat: parseFloat(lat), lng: parseFloat(lon), error: undefined } : loc
@@ -113,15 +112,13 @@ export default function HomePage() {
         );
         setGeocodingState(prev => ({...prev, [locationId]: 'idle'}));
       } else {
-        console.warn(`No results found for ${locationId}: ${locationName}`);
         setLocations(prevLocations =>
           prevLocations.map(loc => (loc.id === locationId ? { ...loc, lat: undefined, lng: undefined, error: '地点が見つかりません' } : loc))
         );
         setGeocodingState(prev => ({...prev, [locationId]: 'error'}));
       }
     } catch (error) {
-      console.error(`Geocoding error for ${locationId} (${locationName}):`, error);
-      const errorMessage = error instanceof Error ? error.message : 'ジオコーディング中にエラーが発生しました';
+      const errorMessage = error instanceof Error ? error.message : 'ジオコーディングエラー';
       setLocations(prevLocations =>
         prevLocations.map(loc => (loc.id === locationId ? { ...loc, lat: undefined, lng: undefined, error: errorMessage } : loc))
       );
@@ -136,11 +133,50 @@ export default function HomePage() {
       return;
     }
     console.log("Route generation triggered. Map component will update with new locations:", validLocations);
-    alert("経路情報を更新しました。地図上で経路が再描画されます。");
+    // アニメーションを初期状態に戻す
+    setIsPlaying(false);
+    setCurrentSegmentIndex(0);
+    alert("経路情報を更新しました。地図上で経路が再描画されます。「再生」ボタンでアニメーションを開始できます。");
   }, [locations]);
 
   const handleSaveProject = useCallback(() => console.log("Save project clicked", locations), [locations]);
   const handleLoadProject = useCallback(() => console.log("Load project clicked"), []);
+
+  // Animation Control Handlers
+  const handlePlayPauseToggle = useCallback(() => {
+    const validLocations = locations.filter(loc => loc.lat !== undefined && loc.lng !== undefined);
+    if (validLocations.length < 2 && !isPlaying) {
+        alert("アニメーションを開始するには、まず有効な経路を生成してください。");
+        return;
+    }
+    setIsPlaying(prev => !prev);
+    // もし停止状態から再生を開始し、かつ最後の区間まで再生済みだったら最初に戻す
+    if (!isPlaying && currentSegmentIndex >= validLocations.length - 1) {
+        setCurrentSegmentIndex(0);
+    }
+  }, [isPlaying, locations, currentSegmentIndex]);
+
+  const handleStopAnimation = useCallback(() => {
+    setIsPlaying(false);
+    setCurrentSegmentIndex(0); // アニメーションを最初からにする
+  }, []);
+
+  const handleSpeedChange = useCallback((speed: number) => {
+    setAnimationSpeed(speed);
+  }, []);
+
+  const handleSegmentComplete = useCallback(() => {
+    setCurrentSegmentIndex(prevIndex => {
+      const nextIndex = prevIndex + 1;
+      const validLocations = locations.filter(loc => loc.lat !== undefined && loc.lng !== undefined);
+      if (nextIndex >= validLocations.length - 1) { // 全区間アニメーション完了
+        setIsPlaying(false);
+        return 0; // 次回再生時は最初から
+      }
+      return nextIndex;
+    });
+  }, [locations]);
+
 
   return (
     <div className="flex flex-col min-h-screen bg-slate-100 antialiased">
@@ -167,9 +203,19 @@ export default function HomePage() {
             <MapWithNoSSR
               locations={locations}
               transportOptions={initialTransportOptions}
+              isPlaying={isPlaying}
+              currentSegmentIndex={currentSegmentIndex}
+              animationSpeed={animationSpeed}
+              onSegmentComplete={handleSegmentComplete}
             />
           </main>
-          <AnimationControls />
+          <AnimationControls
+            isPlaying={isPlaying}
+            onPlayPause={handlePlayPauseToggle}
+            onStop={handleStopAnimation}
+            speed={animationSpeed}
+            onSpeedChange={handleSpeedChange}
+          />
         </div>
       </div>
       <div className="p-2 md:p-4">

@@ -1,23 +1,52 @@
 // src/components/AnimationControls.tsx
 import React from 'react';
-// 'Download' を削除しました
-import { Play, Square, Share2, Film, Image as ImageIcon, Gift } from 'lucide-react'; // アイコン
+import { Play, Pause, Square, Film, Image as ImageIcon, Gift, Share2 } from 'lucide-react'; // Pause アイコンを追加
 
-const AnimationControls: React.FC = () => {
+interface AnimationControlsProps {
+  isPlaying: boolean;
+  onPlayPause: () => void;
+  onStop: () => void;
+  speed: number;
+  onSpeedChange: (newSpeed: number) => void;
+}
+
+const AnimationControls: React.FC<AnimationControlsProps> = ({
+  isPlaying,
+  onPlayPause,
+  onStop,
+  speed,
+  onSpeedChange
+}) => {
   return (
     <div className="bg-slate-200 p-3 rounded-md shadow-lg h-[120px] flex flex-col justify-center">
       <h3 className="text-md font-semibold mb-2 text-center text-slate-700">アニメーション操作</h3>
       <div className="flex items-center justify-between space-x-2">
         <div className="flex items-center space-x-2">
-          <button className="p-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors" title="再生">
-            <Play size={20} />
+          <button
+            onClick={onPlayPause}
+            className="p-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+            title={isPlaying ? "一時停止" : "再生"}
+          >
+            {isPlaying ? <Pause size={20} /> : <Play size={20} />}
           </button>
-          <button className="p-2 bg-slate-500 text-white rounded-md hover:bg-slate-600 transition-colors" title="停止">
+          <button
+            onClick={onStop}
+            className="p-2 bg-slate-500 text-white rounded-md hover:bg-slate-600 transition-colors"
+            title="停止"
+          >
             <Square size={20} />
           </button>
           <div className="flex items-center space-x-1">
-            <label htmlFor="speed-slider" className="text-xs text-slate-600">速度:</label>
-            <input type="range" id="speed-slider" min="0.5" max="2" step="0.1" defaultValue="1" className="w-24 h-2 bg-slate-300 rounded-lg appearance-none cursor-pointer accent-blue-600" />
+            <label htmlFor="speed-slider" className="text-xs text-slate-700">速度:</label>
+            <input
+              type="range"
+              id="speed-slider"
+              min="0.5" max="3" step="0.1" // 最大速度を3倍速に
+              value={speed}
+              onChange={(e) => onSpeedChange(parseFloat(e.target.value))}
+              className="w-24 h-2 bg-slate-300 rounded-lg appearance-none cursor-pointer accent-blue-600"
+            />
+            <span className="text-xs text-slate-700 w-8 text-right">{speed.toFixed(1)}x</span>
           </div>
         </div>
         <div className="flex items-center space-x-1">
