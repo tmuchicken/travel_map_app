@@ -45,8 +45,7 @@ export default function HomePage() {
 
   const [geocodingState, setGeocodingState] = useState<Record<string, 'idle' | 'loading' | 'error'>>({});
 
-  // 各ハンドラ関数は前回と同様なので省略 (handleLocationNameChange, handleTransportChange, etc.)
-  // ... (前回のコードからハンドラ関数をコピーしてください) ...
+  // handleLocationNameChange, handleTransportChange, addWaypoint, removeWaypoint, handleGeocodeLocation は前回と同様
   const handleLocationNameChange = useCallback((id: string, newName: string) => {
     setLocations(prevLocations =>
       prevLocations.map(loc => (loc.id === id ? { ...loc, name: newName, lat: undefined, lng: undefined, error: undefined } : loc))
@@ -90,7 +89,7 @@ export default function HomePage() {
     setGeocodingState(prev => ({...prev, [locationId]: 'loading'}));
     try {
       const apiUrl = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(locationName)}&format=jsonv2&limit=1`;
-      const response = await fetch(apiUrl, { headers: { 'User-Agent': 'TravelRouteApp/1.0 (contact@example.com)' } }); // User-Agent を設定
+      const response = await fetch(apiUrl, { headers: { 'User-Agent': 'TravelRouteApp/1.0 (contact@example.com)' } });
       if (!response.ok) throw new Error(`Nominatim API error: ${response.statusText}`);
       const data = await response.json();
       if (data && data.length > 0) {
@@ -116,13 +115,18 @@ export default function HomePage() {
     }
   }, []);
 
+
+  // 「ルートを生成」ボタンの処理: 有効な地点が2つ以上あれば、経路探索が実行されることをユーザーに伝える (実際の描画はMap.tsxがlocationsの変更を検知して行う)
   const handleGenerateRoute = useCallback(() => {
     const validLocations = locations.filter(loc => loc.lat !== undefined && loc.lng !== undefined);
     if (validLocations.length < 2) {
-      alert("ルートを生成するには、少なくとも2つの有効な地点（出発地と目的地）が必要です。");
+      alert("ルートを生成するには、出発地と目的地の両方に有効な座標が必要です。各地点の「検索」ボタンを押して座標を取得してください。");
       return;
     }
-    console.log("Route generation requested with valid locations:", validLocations);
+    // Map.tsx が locations の変更を検知して経路を再描画するため、ここでは特に何かをする必要はない。
+    // 必要であれば、経路探索中であることを示すローディング状態などを管理する。
+    console.log("Route generation triggered. Map component will update with new locations:", validLocations);
+    alert("経路情報を更新しました。地図上で経路が再描画されます。");
   }, [locations]);
 
   const handleSaveProject = useCallback(() => console.log("Save project clicked", locations), [locations]);
@@ -130,15 +134,11 @@ export default function HomePage() {
 
 
   return (
-    // 全体の高さを min-h-screen にして、コンテンツが画面より大きい場合はスクロールできるようにする
     <div className="flex flex-col min-h-screen bg-slate-100 antialiased">
       <Header />
-      {/* メインコンテンツエリア: 左右2カラム構成 */}
       <div className="flex flex-col md:flex-row flex-1 p-2 md:p-4 gap-2 md:gap-4">
-        {/* 左パネル: コントロールパネル */}
         <div className="w-full md:w-[380px] lg:w-[420px] flex-shrink-0">
           <ControlPanel
-            // className="h-full" // 高さを親に合わせる (ControlPanel内部でスクロール)
             locations={locations}
             transportOptions={initialTransportOptions}
             geocodingState={geocodingState}
@@ -152,21 +152,15 @@ export default function HomePage() {
             onLoadProject={handleLoadProject}
           />
         </div>
-
-        {/* 右パネル: 地図とアニメーション操作 */}
         <div className="flex-1 flex flex-col gap-2 md:gap-4">
-          {/* 地図エリア: 高さを指定 (例: 画面の半分程度、または固定値) */}
           <main className="bg-white rounded-md shadow-md flex-1 min-h-[400px] md:min-h-[500px] lg:min-h-[600px]">
             <MapWithNoSSR
-              locations={locations}
+              locations={locations} // Mapコンポーネントに更新されたlocationsを渡す
             />
           </main>
-          {/* アニメーション操作エリア */}
           <AnimationControls />
         </div>
       </div>
-
-      {/* プレビュー・出力設定エリア */}
       <div className="p-2 md:p-4">
         <PreviewOutput />
       </div>
