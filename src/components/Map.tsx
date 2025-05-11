@@ -2,11 +2,11 @@
 import { useEffect, useRef } from 'react';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
-import 'leaflet-routing-machine/dist/leaflet-routing-machine.css';
-import 'leaflet-routing-machine';
+import 'leaflet-routing-machine/dist/leaflet-routing-machine.css'; // Routing Machine の CSS
+import 'leaflet-routing-machine'; // Routing Machine の JavaScript
 import type { LocationPoint } from '@/app/page';
 
-// アイコンパス修正
+// アイコンパス修正 (前回と同様)
 if (typeof window !== 'undefined') {
   // @ts-expect-error: LeafletのデフォルトアイコンURL解決はNext.js/webpack環境で問題を起こすことがあるため
   delete L.Icon.Default.prototype._getIconUrl;
@@ -26,7 +26,6 @@ interface MapProps {
 const Map: React.FC<MapProps> = ({ center = [35.6809591, 139.7673068], zoom = 13, locations }) => {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
-  // 複数のルーティングコントロールやポリラインを管理するための参照
   const layerRefs = useRef<(L.Routing.Control | L.Polyline)[]>([]);
   const markerRefs = useRef<L.Marker[]>([]);
 
@@ -35,7 +34,7 @@ const Map: React.FC<MapProps> = ({ center = [35.6809591, 139.7673068], zoom = 13
     // 地図の初期化 (初回のみ)
     if (mapRef.current && !mapInstanceRef.current) {
       mapInstanceRef.current = L.map(mapRef.current, {
-        zoomControl: true, // Leafletのデフォルトズームコントロールを表示
+        zoomControl: true,
       }).setView(center, zoom);
 
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -46,7 +45,6 @@ const Map: React.FC<MapProps> = ({ center = [35.6809591, 139.7673068], zoom = 13
 
     // locations が変更されたら経路とマーカーを更新
     if (mapInstanceRef.current) {
-      // 既存の経路レイヤーとマーカーを全て削除
       layerRefs.current.forEach(layer => {
         if (layer instanceof L.Routing.Control) {
           mapInstanceRef.current?.removeControl(layer);
@@ -63,7 +61,6 @@ const Map: React.FC<MapProps> = ({ center = [35.6809591, 139.7673068], zoom = 13
         loc => typeof loc.lat === 'number' && typeof loc.lng === 'number' && !isNaN(loc.lat) && !isNaN(loc.lng)
       );
 
-      // まず全地点にマーカーを設置
       validLocations.forEach(loc => {
         if (typeof loc.lat === 'number' && typeof loc.lng === 'number') {
           const marker = L.marker([loc.lat, loc.lng]).addTo(mapInstanceRef.current!);
@@ -72,12 +69,9 @@ const Map: React.FC<MapProps> = ({ center = [35.6809591, 139.7673068], zoom = 13
         }
       });
 
-      // 区間ごとに経路を描画
       for (let i = 0; i < validLocations.length - 1; i++) {
         const startPoint = validLocations[i];
         const endPoint = validLocations[i+1];
-
-        // startPoint.transport は、その地点から次の地点への移動手段を指す
         const transportMode = startPoint.transport;
 
         if (typeof startPoint.lat === 'number' && typeof startPoint.lng === 'number' &&
@@ -86,22 +80,22 @@ const Map: React.FC<MapProps> = ({ center = [35.6809591, 139.7673068], zoom = 13
           const startLatLng = L.latLng(startPoint.lat, startPoint.lng);
           const endLatLng = L.latLng(endPoint.lat, endPoint.lng);
 
-          if (transportMode === 'Plane') { // 飛行機の場合は直線を描画
+          if (transportMode === 'Plane') {
             const polyline = L.polyline([startLatLng, endLatLng], {
-              color: 'green', // 飛行機の経路の色
+              color: 'green',
               weight: 3,
               opacity: 0.7,
-              dashArray: '5, 10' // 点線にする
+              dashArray: '5, 10'
             }).addTo(mapInstanceRef.current!);
             layerRefs.current.push(polyline);
-          } else { // その他の移動手段 (バス, 電車, 車, 徒歩) はルーティングマシンを使用
+          } else {
             const routingControl = L.Routing.control({
               waypoints: [startLatLng, endLatLng],
-              routeWhileDragging: false, // 各セグメントではドラッグを無効化
-              show: false,             // 経路指示は非表示 (全体で表示する場合は別途検討)
+              routeWhileDragging: false,
+              show: false,
               addWaypoints: false,
-              createMarker: () => null, // マーカーは別途描画するため、ここでは無効化
-              fitSelectedRoutes: false,  // 自動ズームは最後にまとめて行う
+              // createMarker: () => null, // 型エラーのため一時的にコメントアウトまたは削除
+              fitSelectedRoutes: false,
               lineOptions: {
                 styles: [{ color: 'blue', opacity: 0.7, weight: 5 }],
                 extendToWaypoints: true,
@@ -109,9 +103,12 @@ const Map: React.FC<MapProps> = ({ center = [35.6809591, 139.7673068], zoom = 13
               },
             }).addTo(mapInstanceRef.current!);
 
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+            routingControl.on('routesfound', function(_e) {
+              // console.log('Routes found for segment:', _e.routes);
+            });
             routingControl.on('routingerror', function(e) {
               console.error(`Routing error for segment ${startPoint.name} to ${endPoint.name}:`, e.error);
-              // エラー発生区間を直線で結ぶなどのフォールバックも検討可能
               const fallbackPolyline = L.polyline([startLatLng, endLatLng], {
                 color: 'red', weight: 3, opacity: 0.5, dashArray: '5, 5'
               }).addTo(mapInstanceRef.current!);
@@ -123,7 +120,6 @@ const Map: React.FC<MapProps> = ({ center = [35.6809591, 139.7673068], zoom = 13
         }
       }
 
-      // 全ての有効な地点が表示されるように地図の表示範囲を調整
       if (validLocations.length > 0) {
         const bounds = L.latLngBounds(validLocations.map(loc => L.latLng(loc.lat!, loc.lng!)));
         if (bounds.isValid()) {
@@ -133,10 +129,9 @@ const Map: React.FC<MapProps> = ({ center = [35.6809591, 139.7673068], zoom = 13
         mapInstanceRef.current.setView([validLocations[0].lat, validLocations[0].lng], 13);
       }
     }
-  }, [locations, center, zoom]); // locations が変更されたら再実行
+  }, [locations, center, zoom]);
 
   useEffect(() => {
-    // アンマウント時に地図インスタンスをクリーンアップ
     return () => {
       if (mapInstanceRef.current) {
         mapInstanceRef.current.remove();
