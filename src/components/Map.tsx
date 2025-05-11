@@ -100,9 +100,7 @@ const Map: React.FC<MapProps> = ({ center = [35.6809591, 139.7673068], zoom = 13
           const startLatLng = L.latLng(startPoint.lat, startPoint.lng);
           const endLatLng = L.latLng(endPoint.lat, endPoint.lng);
 
-          // アニメーションマーカーの準備 (最初の区間のみ、または現在アクティブな区間のみ)
-          // ここでは最初の区間の始点にアニメーションマーカーを配置する例
-          if (i === 0) { // 最初の区間のみアニメーションマーカーを処理
+          if (i === 0) { 
             const currentAnimatedMarker = animatedMarkerRef.current;
             if (!currentAnimatedMarker) {
               animatedMarkerRef.current = L.marker(startLatLng, {
@@ -115,7 +113,6 @@ const Map: React.FC<MapProps> = ({ center = [35.6809591, 139.7673068], zoom = 13
             }
           }
 
-
           let routeCoordinates: L.LatLng[] = [];
 
           if (transportMode === 'Plane') {
@@ -124,15 +121,14 @@ const Map: React.FC<MapProps> = ({ center = [35.6809591, 139.7673068], zoom = 13
             }).addTo(mapInstanceRef.current);
             layerRefs.current.push(polyline);
             routeCoordinates = [startLatLng, endLatLng];
-            if (i === 0) { // 最初の区間の場合、アニメーション座標として設定
-                // animateMarker(routeCoordinates); // あとで有効化
+            if (i === 0) { 
                 console.log("Plane route coordinates for animation:", routeCoordinates);
+                // animateMarker(routeCoordinates); // あとで有効化
             }
           } else {
             const routingControl = L.Routing.control({
               waypoints: [startLatLng, endLatLng],
               routeWhileDragging: false, show: false, addWaypoints: false, fitSelectedRoutes: false,
-              // createMarker: () => null, // 型エラーのためコメントアウト
               lineOptions: {
                 styles: [{ color: 'blue', opacity: 0.7, weight: 5 }],
                 extendToWaypoints: true, missingRouteTolerance: 50,
@@ -142,7 +138,7 @@ const Map: React.FC<MapProps> = ({ center = [35.6809591, 139.7673068], zoom = 13
               if (e.routes && e.routes.length > 0) {
                 routeCoordinates = e.routes[0].coordinates;
                 console.log("Road route coordinates for animation (segment " + i + "):", routeCoordinates);
-                if (i === 0) { // 最初の区間の場合、アニメーション座標として設定
+                if (i === 0) { 
                     // animateMarker(routeCoordinates); // あとで有効化
                 }
               }
@@ -156,7 +152,7 @@ const Map: React.FC<MapProps> = ({ center = [35.6809591, 139.7673068], zoom = 13
                 layerRefs.current.push(fallbackPolyline);
               }
               routeCoordinates = [startLatLng, endLatLng];
-              if (i === 0) { // 最初の区間の場合、アニメーション座標として設定
+              if (i === 0) { 
                 // animateMarker(routeCoordinates); // あとで有効化
               }
             })
@@ -175,13 +171,13 @@ const Map: React.FC<MapProps> = ({ center = [35.6809591, 139.7673068], zoom = 13
     }
   }, [locations, center, zoom, transportOptions]);
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const animateMarker = (routeCoords: L.LatLng[], speed: number = 1) => {
     if (!animatedMarkerRef.current || routeCoords.length < 2) return;
     let currentIndex = 0;
     const marker = animatedMarkerRef.current;
-    marker.setLatLng(routeCoords[currentIndex]); // 開始位置にマーカーをセット
+    marker.setLatLng(routeCoords[currentIndex]);
     
-    // 既存のアニメーションがあればキャンセル
     if (animationFrameIdRef.current) {
         cancelAnimationFrame(animationFrameIdRef.current);
     }
@@ -201,7 +197,6 @@ const Map: React.FC<MapProps> = ({ center = [35.6809591, 139.7673068], zoom = 13
             cancelAnimationFrame(animationFrameIdRef.current);
             animationFrameIdRef.current = null;
         }
-        // ここで次の区間のアニメーションを開始するロジックなどを追加
       }
     };
     move();
