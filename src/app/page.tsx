@@ -8,19 +8,20 @@ import ControlPanel from '@/components/ControlPanel';
 import AnimationControls from '@/components/AnimationControls';
 import PreviewOutput from '@/components/PreviewOutput';
 
-// 型定義 (前回と同様)
+// 型定義
 export interface LocationPoint {
   id: string;
   name: string;
   transport: string;
   lat?: number;
   lng?: number;
-  error?: string;
+  error?: string; // ジオコーディングエラーメッセージ用
 }
 
 export interface TransportOption {
   name: string;
   label: string;
+  // icon?: React.JSX.Element; // Map.tsxでアイコンを生成するため、ここでは必須としない
 }
 
 const MapWithNoSSR = dynamic(() => import('@/components/Map'), {
@@ -45,7 +46,6 @@ export default function HomePage() {
 
   const [geocodingState, setGeocodingState] = useState<Record<string, 'idle' | 'loading' | 'error'>>({});
 
-  // handleLocationNameChange, handleTransportChange, addWaypoint, removeWaypoint, handleGeocodeLocation は前回と同様
   const handleLocationNameChange = useCallback((id: string, newName: string) => {
     setLocations(prevLocations =>
       prevLocations.map(loc => (loc.id === id ? { ...loc, name: newName, lat: undefined, lng: undefined, error: undefined } : loc))
@@ -80,20 +80,32 @@ export default function HomePage() {
 
   const handleGeocodeLocation = useCallback(async (locationId: string, locationName: string) => {
     if (!locationName.trim()) {
+      console.log(`Geocoding skipped for ${locationId}: name is empty.`);
       setLocations(prevLocations =>
         prevLocations.map(loc => (loc.id === locationId ? { ...loc, lat: undefined, lng: undefined, error: undefined } : loc))
       );
       setGeocodingState(prev => ({...prev, [locationId]: 'idle'}));
       return;
     }
+
+    console.log(`Geocoding for ${locationId}: ${locationName}`);
     setGeocodingState(prev => ({...prev, [locationId]: 'loading'}));
+
     try {
       const apiUrl = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(locationName)}&format=jsonv2&limit=1`;
-      const response = await fetch(apiUrl, { headers: { 'User-Agent': 'TravelRouteApp/1.0 (contact@example.com)' } });
-      if (!response.ok) throw new Error(`Nominatim API error: ${response.statusText}`);
+      // User-Agentヘッダーの指定 (実際のアプリ名と連絡先に置き換えてください)
+      const response = await fetch(apiUrl, { headers: { 'User-Agent': 'TravelRouteApp/1.0 (your-contact-email@example.com)' } });
+
+
+      if (!response.ok) {
+        throw new Error(`Nominatim API request failed: ${response.statusText}`);
+      }
+
       const data = await response.json();
+
       if (data && data.length > 0) {
         const { lat, lon } = data[0];
+        console.log(`Geocoded ${locationId} (${locationName}) to: lat=${parseFloat(lat)}, lng=${parseFloat(lon)}`);
         setLocations(prevLocations =>
           prevLocations.map(loc =>
             loc.id === locationId ? { ...loc, lat: parseFloat(lat), lng: parseFloat(lon), error: undefined } : loc
@@ -101,13 +113,15 @@ export default function HomePage() {
         );
         setGeocodingState(prev => ({...prev, [locationId]: 'idle'}));
       } else {
+        console.warn(`No results found for ${locationId}: ${locationName}`);
         setLocations(prevLocations =>
           prevLocations.map(loc => (loc.id === locationId ? { ...loc, lat: undefined, lng: undefined, error: '地点が見つかりません' } : loc))
         );
         setGeocodingState(prev => ({...prev, [locationId]: 'error'}));
       }
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'ジオコーディングエラー';
+      console.error(`Geocoding error for ${locationId} (${locationName}):`, error);
+      const errorMessage = error instanceof Error ? error.message : 'ジオコーディング中にエラーが発生しました';
       setLocations(prevLocations =>
         prevLocations.map(loc => (loc.id === locationId ? { ...loc, lat: undefined, lng: undefined, error: errorMessage } : loc))
       );
@@ -115,16 +129,12 @@ export default function HomePage() {
     }
   }, []);
 
-
-  // 「ルートを生成」ボタンの処理: 有効な地点が2つ以上あれば、経路探索が実行されることをユーザーに伝える (実際の描画はMap.tsxがlocationsの変更を検知して行う)
   const handleGenerateRoute = useCallback(() => {
     const validLocations = locations.filter(loc => loc.lat !== undefined && loc.lng !== undefined);
     if (validLocations.length < 2) {
       alert("ルートを生成するには、出発地と目的地の両方に有効な座標が必要です。各地点の「検索」ボタンを押して座標を取得してください。");
       return;
     }
-    // Map.tsx が locations の変更を検知して経路を再描画するため、ここでは特に何かをする必要はない。
-    // 必要であれば、経路探索中であることを示すローディング状態などを管理する。
     console.log("Route generation triggered. Map component will update with new locations:", validLocations);
     alert("経路情報を更新しました。地図上で経路が再描画されます。");
   }, [locations]);
@@ -132,13 +142,13 @@ export default function HomePage() {
   const handleSaveProject = useCallback(() => console.log("Save project clicked", locations), [locations]);
   const handleLoadProject = useCallback(() => console.log("Load project clicked"), []);
 
-
   return (
     <div className="flex flex-col min-h-screen bg-slate-100 antialiased">
       <Header />
       <div className="flex flex-col md:flex-row flex-1 p-2 md:p-4 gap-2 md:gap-4">
         <div className="w-full md:w-[380px] lg:w-[420px] flex-shrink-0">
           <ControlPanel
+            className="h-full"
             locations={locations}
             transportOptions={initialTransportOptions}
             geocodingState={geocodingState}
@@ -155,7 +165,8 @@ export default function HomePage() {
         <div className="flex-1 flex flex-col gap-2 md:gap-4">
           <main className="bg-white rounded-md shadow-md flex-1 min-h-[400px] md:min-h-[500px] lg:min-h-[600px]">
             <MapWithNoSSR
-              locations={locations} // Mapコンポーネントに更新されたlocationsを渡す
+              locations={locations}
+              transportOptions={initialTransportOptions}
             />
           </main>
           <AnimationControls />
