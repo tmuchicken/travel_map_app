@@ -8,12 +8,14 @@ import ControlPanel from '@/components/ControlPanel';
 import AnimationControls from '@/components/AnimationControls';
 import PreviewOutput from '@/components/PreviewOutput';
 
+// 型定義
 export interface LocationPoint {
   id: string;
   name: string;
   transport: string;
   lat?: number;
   lng?: number;
+  error?: string; // ジオコーディングエラーメッセージ用
 }
 
 export interface TransportOption {
@@ -41,10 +43,15 @@ export default function HomePage() {
     { id: 'end', name: '', transport: initialTransportOptions[0].name },
   ]);
 
+  const [geocodingState, setGeocodingState] = useState<Record<string, 'idle' | 'loading' | 'error'>>({});
+
+
   const handleLocationNameChange = useCallback((id: string, newName: string) => {
     setLocations(prevLocations =>
-      prevLocations.map(loc => (loc.id === id ? { ...loc, name: newName, lat: undefined, lng: undefined } : loc))
+      prevLocations.map(loc => (loc.id === id ? { ...loc, name: newName, lat: undefined, lng: undefined, error: undefined } : loc))
     );
+    // 地点名が変更されたら、その地点のジオコーディング状態をリセット
+    setGeocodingState(prev => ({...prev, [id]: 'idle'}));
   }, []);
 
   const handleTransportChange = useCallback((id: string, newTransport: string) => {
@@ -65,46 +72,92 @@ export default function HomePage() {
 
   const removeWaypoint = useCallback((idToRemove: string) => {
     setLocations(prevLocations => prevLocations.filter(loc => loc.id !== idToRemove));
+    setGeocodingState(prev => {
+      const newState = {...prev};
+      delete newState[idToRemove];
+      return newState;
+    });
   }, []);
 
+  // Nominatim API を使用したジオコーディング処理
   const handleGeocodeLocation = useCallback(async (locationId: string, locationName: string) => {
     if (!locationName.trim()) {
       console.log(`Geocoding skipped for ${locationId}: name is empty.`);
       setLocations(prevLocations =>
-        prevLocations.map(loc => (loc.id === locationId ? { ...loc, lat: undefined, lng: undefined } : loc))
+        prevLocations.map(loc => (loc.id === locationId ? { ...loc, lat: undefined, lng: undefined, error: undefined } : loc))
       );
+      setGeocodingState(prev => ({...prev, [locationId]: 'idle'}));
       return;
     }
+
     console.log(`Geocoding for ${locationId}: ${locationName}`);
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    const mockLat = 35.0 + Math.random() * 2;
-    const mockLng = 139.0 + Math.random() * 2;
-    console.log(`Mock geocoded ${locationId} (${locationName}) to: lat=${mockLat}, lng=${mockLng}`);
-    setLocations(prevLocations =>
-      prevLocations.map(loc =>
-        loc.id === locationId ? { ...loc, lat: mockLat, lng: mockLng } : loc
-      )
-    );
-  }, []);
+    setGeocodingState(prev => ({...prev, [locationId]: 'loading'})); // ローディング状態に設定
+
+    try {
+      // Nominatim APIエンドポイント (User-Agentヘッダーの指定を推奨)
+      // 注意: Nominatim APIには利用規約があり、大量リクエストには向きません。
+      // 個人利用の範囲で、1秒に1リクエスト程度の頻度を守るようにしてください。
+      // アプリケーション名をUser-Agentに含めることが推奨されています。
+      // 例: const response = await fetch(apiUrl, { headers: { 'User-Agent': 'TravelRouteApp/1.0 (your-email@example.com)' } });
+      const apiUrl = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(locationName)}&format=jsonv2&limit=1`;
+      const response = await fetch(apiUrl);
+
+      if (!response.ok) {
+        throw new Error(`Nominatim API request failed: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+
+      if (data && data.length > 0) {
+        const { lat, lon } = data[0]; // Nominatimのレスポンスは lon
+        console.log(`Geocoded ${locationId} (${locationName}) to: lat=${parseFloat(lat)}, lng=${parseFloat(lon)}`);
+        setLocations(prevLocations =>
+          prevLocations.map(loc =>
+            loc.id === locationId ? { ...loc, lat: parseFloat(lat), lng: parseFloat(lon), error: undefined } : loc
+          )
+        );
+        setGeocodingState(prev => ({...prev, [locationId]: 'idle'}));
+      } else {
+        console.warn(`No results found for ${locationId}: ${locationName}`);
+        setLocations(prevLocations =>
+          prevLocations.map(loc => (loc.id === locationId ? { ...loc, lat: undefined, lng: undefined, error: '地点が見つかりません' } : loc))
+        );
+        setGeocodingState(prev => ({...prev, [locationId]: 'error'}));
+      }
+    } catch (error) {
+      console.error(`Geocoding error for ${locationId} (${locationName}):`, error);
+      const errorMessage = error instanceof Error ? error.message : 'ジオコーディング中にエラーが発生しました';
+      setLocations(prevLocations =>
+        prevLocations.map(loc => (loc.id === locationId ? { ...loc, lat: undefined, lng: undefined, error: errorMessage } : loc))
+      );
+      setGeocodingState(prev => ({...prev, [locationId]: 'error'}));
+    }
+  }, []); // 依存配列は空でOK (内部で最新のステートを参照しないため)
 
   const handleGenerateRoute = useCallback(() => {
-    console.log("Route generation requested with locations:", locations);
+    const validLocations = locations.filter(loc => loc.lat !== undefined && loc.lng !== undefined);
+    if (validLocations.length < 2) {
+      alert("ルートを生成するには、少なくとも2つの有効な地点（出発地と目的地）が必要です。");
+      return;
+    }
+    console.log("Route generation requested with valid locations:", validLocations);
+    // ここで Map.tsx に経路探索を指示する処理を実装
   }, [locations]);
 
   const handleSaveProject = useCallback(() => console.log("Save project clicked", locations), [locations]);
   const handleLoadProject = useCallback(() => console.log("Load project clicked"), []);
 
+
   return (
     <div className="flex flex-col h-screen bg-gray-100 antialiased">
       <Header />
-      {/* メインコンテンツエリアの高さを指定し、overflow-hidden を追加 */}
       <div className="flex flex-1 overflow-hidden pt-2 px-2 pb-2 space-x-2">
-        {/* 左パネル：高さを指定し、内部でスクロールできるようにする */}
-        <div className="w-[380px] flex-shrink-0 flex flex-col space-y-2 overflow-hidden"> {/* overflow-hidden を追加 */}
+        <div className="w-[380px] flex-shrink-0 flex flex-col space-y-2 overflow-hidden">
           <ControlPanel
-            className="flex-1 min-h-0" // flex-1 と min-h-0 を追加して高さを柔軟にし、スクロールを有効にする
+            className="flex-1 min-h-0"
             locations={locations}
             transportOptions={initialTransportOptions}
+            geocodingState={geocodingState} // ジオコーディングの状態を渡す
             onLocationNameChange={handleLocationNameChange}
             onTransportChange={handleTransportChange}
             onAddWaypoint={addWaypoint}
@@ -117,7 +170,9 @@ export default function HomePage() {
         </div>
         <div className="flex-1 flex flex-col space-y-2">
           <main className="flex-1 bg-white rounded-md shadow">
-            <MapWithNoSSR />
+            <MapWithNoSSR
+              locations={locations} // Mapコンポーネントにlocationsを渡す
+            />
           </main>
           <AnimationControls />
         </div>

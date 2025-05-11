@@ -1,12 +1,13 @@
 // src/components/ControlPanel.tsx
 import React from 'react';
-import { Plus, Save, FolderOpen } from 'lucide-react';
+import { Plus, Save, FolderOpen, Loader2 } from 'lucide-react'; // Loader2 をインポート
 import type { LocationPoint, TransportOption } from '@/app/page';
 
 interface ControlPanelProps {
   className?: string;
   locations: LocationPoint[];
   transportOptions: TransportOption[];
+  geocodingState: Record<string, 'idle' | 'loading' | 'error'>; // ジオコーディングの状態を受け取る
   onLocationNameChange: (id: string, newName: string) => void;
   onTransportChange: (id: string, newTransport: string) => void;
   onAddWaypoint: () => void;
@@ -21,29 +22,35 @@ const LocationInputGroup: React.FC<{
   label: string;
   pointType: string;
   value: string;
+  error?: string; // エラーメッセージ表示用
+  isLoading: boolean; // ローディング状態表示用
   onValueChange: (newValue: string) => void;
   onSearchClick: () => void;
-}> = ({ label, pointType, value, onValueChange, onSearchClick }) => {
+}> = ({ label, pointType, value, error, isLoading, onValueChange, onSearchClick }) => {
   return (
-    <div className="mb-4">
+    <div className="mb-1"> {/* マージンを少し調整 */}
       <label htmlFor={`${pointType}-input`} className="block text-xs font-medium text-gray-700 mb-1">{label}</label>
-      <div className="flex space-x-2">
+      <div className="flex space-x-2 items-center"> {/* items-center を追加 */}
         <input
           type="text"
           id={`${pointType}-input`}
           value={value}
           onChange={(e) => onValueChange(e.target.value)}
-          // 入力文字の色を濃くしました (例: text-slate-900)
-          className="flex-grow p-2 border border-gray-300 rounded-md shadow-sm text-sm focus:ring-blue-500 focus:border-blue-500 text-slate-900 placeholder-slate-400"
+          className={`flex-grow p-2 border rounded-md shadow-sm text-sm focus:ring-blue-500 focus:border-blue-500 text-slate-900 placeholder-slate-400 ${
+            error ? 'border-red-500' : 'border-gray-300'
+          }`}
           placeholder="住所または地名を入力"
+          disabled={isLoading} // ローディング中は無効化
         />
         <button
           onClick={onSearchClick}
-          className="px-3 py-2 bg-slate-600 text-white text-sm rounded-md hover:bg-slate-700 transition-colors"
+          className="px-3 py-2 bg-slate-600 text-white text-sm rounded-md hover:bg-slate-700 transition-colors disabled:opacity-50"
+          disabled={isLoading || !value.trim()} // ローディング中または入力が空の場合は無効化
         >
-          検索
+          {isLoading ? <Loader2 size={16} className="animate-spin" /> : '検索'}
         </button>
       </div>
+      {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
     </div>
   );
 };
@@ -54,7 +61,7 @@ const TransportSelection: React.FC<{
   options: TransportOption[];
 }> = ({ selectedTransport, onTransportChange, options }) => {
   return (
-    <div className="mb-4">
+    <div className="mb-4 mt-2"> {/* マージンを調整 */}
       <p className="block text-xs font-medium text-gray-700 mb-1">移動手段</p>
       <div className="bg-slate-50 border border-gray-300 rounded-md p-2 flex justify-around items-center">
         {options.map((item) => (
@@ -77,6 +84,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
   className,
   locations,
   transportOptions,
+  geocodingState,
   onLocationNameChange,
   onTransportChange,
   onAddWaypoint,
@@ -99,6 +107,8 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
           label="出発地"
           pointType={startPoint.id}
           value={startPoint.name}
+          error={startPoint.error}
+          isLoading={geocodingState[startPoint.id] === 'loading'}
           onValueChange={(newName) => onLocationNameChange(startPoint.id, newName)}
           onSearchClick={() => onGeocodeLocation(startPoint.id, startPoint.name)}
         />
@@ -109,7 +119,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
         />
 
         {waypoints.map((waypoint, index) => (
-          <div key={waypoint.id} className="relative mb-4 p-3 border border-dashed border-slate-400 rounded-md">
+          <div key={waypoint.id} className="relative mb-1 p-3 border border-dashed border-slate-400 rounded-md"> {/* マージン調整 */}
             {waypoints.length > 0 && (
               <button
                 onClick={() => onRemoveWaypoint(waypoint.id)}
@@ -123,6 +133,8 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
               label={`中継地点 ${index + 1}`}
               pointType={waypoint.id}
               value={waypoint.name}
+              error={waypoint.error}
+              isLoading={geocodingState[waypoint.id] === 'loading'}
               onValueChange={(newName) => onLocationNameChange(waypoint.id, newName)}
               onSearchClick={() => onGeocodeLocation(waypoint.id, waypoint.name)}
             />
@@ -138,6 +150,8 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
           label="目的地"
           pointType={endPoint.id}
           value={endPoint.name}
+          error={endPoint.error}
+          isLoading={geocodingState[endPoint.id] === 'loading'}
           onValueChange={(newName) => onLocationNameChange(endPoint.id, newName)}
           onSearchClick={() => onGeocodeLocation(endPoint.id, endPoint.name)}
         />
