@@ -6,7 +6,7 @@ import L from 'leaflet'; // Leafletライブラリをインポート
 // Leafletのデフォルトアイコンパスの問題を修正 (Next.js環境でよく発生)
 // これがないとマーカーアイコンが表示されない場合がある
 if (typeof window !== 'undefined') { // windowオブジェクトが存在する場合のみ実行 (SSR対策)
-  // @ts-expect-error  <-- ここを修正しました
+  // @ts-expect-error
   delete L.Icon.Default.prototype._getIconUrl;
   L.Icon.Default.mergeOptions({
     iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
@@ -28,7 +28,9 @@ const Map: React.FC<MapProps> = ({ center = [35.6809591, 139.7673068], zoom = 13
     // マウント時に一度だけ地図を初期化
     if (mapRef.current && !mapInstanceRef.current) {
       // 地図インスタンスを作成
-      mapInstanceRef.current = L.map(mapRef.current).setView(center, zoom);
+      mapInstanceRef.current = L.map(mapRef.current, {
+        zoomControl: false // デフォルトのズームコントロールを無効化 (ワイヤーフレームにカスタムコントロールがあるため)
+      }).setView(center, zoom);
 
       // OpenStreetMapのタイルレイヤーを追加
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -36,10 +38,9 @@ const Map: React.FC<MapProps> = ({ center = [35.6809591, 139.7673068], zoom = 13
         attribution: '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
       }).addTo(mapInstanceRef.current);
 
-      // (オプション) マーカーの追加例
-      // L.marker(center).addTo(mapInstanceRef.current)
-      //   .bindPopup('東京駅')
-      //   .openPopup();
+      // ワイヤーフレームに合わせたカスタムズームコントロール (オプション)
+      // L.control.zoom({ position: 'topright' }).addTo(mapInstanceRef.current);
+
     }
 
     // コンポーネントのアンマウント時に地図インスタンスをクリーンアップ
@@ -49,13 +50,10 @@ const Map: React.FC<MapProps> = ({ center = [35.6809591, 139.7673068], zoom = 13
         mapInstanceRef.current = null;
       }
     };
-  }, [center, zoom]); // centerやzoomが変更されたら再描画 (今回は初回のみを想定)
+  }, [center, zoom]);
 
   return (
-    <div ref={mapRef} style={{ width: '100%', height: '100vh', borderRadius: '0px' }} id="map-container">
-      {/* スタイルは必要に応じて調整してください。
-          Next.jsではグローバルCSSやCSS Modulesを使うのが一般的です。
-          ここではインラインスタイルで高さを指定しています。 */}
+    <div ref={mapRef} style={{ width: '100%', height: '100%' }} id="map-container" className="rounded-md"> {/* 親要素に追従するようにし、角丸を追加 */}
     </div>
   );
 };
