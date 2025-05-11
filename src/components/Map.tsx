@@ -32,7 +32,7 @@ const Map: React.FC<MapProps> = ({ center = [35.6809591, 139.7673068], zoom = 13
     // 地図の初期化 (初回のみ)
     if (mapRef.current && !mapInstanceRef.current) {
       mapInstanceRef.current = L.map(mapRef.current, {
-        zoomControl: true, // Leafletのデフォルトズームコントロールを有効にする (ワイヤーフレームのカスタムコントロールは別途実装)
+        zoomControl: true,
       }).setView(center, zoom);
 
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -43,7 +43,6 @@ const Map: React.FC<MapProps> = ({ center = [35.6809591, 139.7673068], zoom = 13
 
     // locations が変更されたら経路を更新
     if (mapInstanceRef.current) {
-      // 既存のルーティングコントロールを削除
       if (routingControlRef.current) {
         mapInstanceRef.current.removeControl(routingControlRef.current);
         routingControlRef.current = null;
@@ -56,47 +55,36 @@ const Map: React.FC<MapProps> = ({ center = [35.6809591, 139.7673068], zoom = 13
       if (waypoints.length >= 2) {
         routingControlRef.current = L.Routing.control({
           waypoints: waypoints,
-          routeWhileDragging: true, // ドラッグ中も経路を再計算 (オプション)
-          show: true, // 経路の指示を表示するか (オプション)
-          addWaypoints: false, // 地図クリックでウェイポイント追加機能を無効化
-          draggableWaypoints: false, // ウェイポイントのドラッグ移動を無効化
-          fitSelectedRoutes: 'smart', // ルートに合わせて地図の表示範囲を調整
-          lineOptions: { // 経路の線のスタイル
-            styles: [{ color: 'blue', opacity: 0.7, weight: 5 }]
+          routeWhileDragging: true,
+          show: true,
+          addWaypoints: false, 
+          fitSelectedRoutes: 'smart', 
+          lineOptions: { 
+            styles: [{ color: 'blue', opacity: 0.7, weight: 5 }],
+            extendToWaypoints: true,
+            missingRouteTolerance: 50,
           },
-          // createMarker: function() { return null; } // デフォルトのマーカーを非表示にする場合
-          // OSRMのデモサーバーを使用 (本番利用時は自身のサーバーか有料サービスを検討)
-          // router: L.Routing.osrmv1({
-          //   serviceUrl: `https://router.project-osrm.org/route/v1`
-          // }),
-          // Leaflet Routing Machine はデフォルトで OSRM のデモサーバーを使用します
         }).addTo(mapInstanceRef.current);
 
-        // (オプション) 経路が見つからなかった場合などのエラーハンドリング
-        routingControlRef.current.on('routesfound', function(e) {
-          // const routes = e.routes;
-          // console.log('Routes found:', routes);
+        // ESLintの未使用変数警告をこの行に対して無効化
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        routingControlRef.current.on('routesfound', function(_e) {
+          // console.log('Routes found:', _e.routes); // もし使う場合は _e を e に戻し、上の ESLint disable コメントを削除
         });
-        routingControlRef.current.on('routingerror', function(e) {
+        routingControlRef.current.on('routingerror', function(e) { // こちらは e を使用している
           console.error('Routing error:', e.error);
-          // エラーメッセージをユーザーに表示する処理などをここに追加
           alert(`経路の取得に失敗しました: ${e.error.message}`);
         });
 
       } else {
-        // 有効な地点が2つ未満の場合は、地図の中心を最初の有効な地点に合わせる (またはデフォルトのビュー)
         if (waypoints.length === 1) {
           mapInstanceRef.current.setView(waypoints[0], 13);
-        } else {
-          // 有効な地点がない場合は、初期の中心とズームに戻すか、何もしない
-          // mapInstanceRef.current.setView(center, zoom);
         }
       }
     }
-  }, [locations, center, zoom]); // locations が変更されたら再実行
+  }, [locations, center, zoom]);
 
   useEffect(() => {
-    // アンマウント時に地図インスタンスをクリーンアップ
     return () => {
       if (mapInstanceRef.current) {
         mapInstanceRef.current.remove();
