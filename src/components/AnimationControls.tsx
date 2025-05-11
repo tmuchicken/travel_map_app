@@ -1,6 +1,7 @@
 // src/components/AnimationControls.tsx
 import React from 'react';
-import { Play, Square, Download, Share2, Film, Image as ImageIcon, Gift } from 'lucide-react'; // アイコン
+// 'Download' を削除しました
+import { Play, Square, Share2, Film, Image as ImageIcon, Gift } from 'lucide-react'; // アイコン
 
 const AnimationControls: React.FC = () => {
   return (

@@ -6,7 +6,7 @@ import L from 'leaflet'; // Leafletライブラリをインポート
 // Leafletのデフォルトアイコンパスの問題を修正 (Next.js環境でよく発生)
 // これがないとマーカーアイコンが表示されない場合がある
 if (typeof window !== 'undefined') { // windowオブジェクトが存在する場合のみ実行 (SSR対策)
-  // @ts-expect-error
+  // @ts-expect-error: LeafletのデフォルトアイコンURL解決はNext.js/webpack環境で問題を起こすことがあるため
   delete L.Icon.Default.prototype._getIconUrl;
   L.Icon.Default.mergeOptions({
     iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',

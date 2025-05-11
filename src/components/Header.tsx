@@ -1,6 +1,7 @@
 // src/components/Header.tsx
 import React, { useState } from 'react';
-import { HelpCircle, Moon, Sun } from 'lucide-react'; // lucide-react からアイコンをインポート
+// 'Moon', 'Sun' を削除しました
+import { HelpCircle } from 'lucide-react'; // lucide-react からアイコンをインポート
 
 const Header: React.FC = () => {
   const [darkMode, setDarkMode] = useState(false); // ダークモードの状態管理（実際の機能は未実装）

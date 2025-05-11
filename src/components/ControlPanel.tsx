@@ -70,7 +70,8 @@ const ControlPanel: React.FC<ControlPanelProps> = ({ className }) => {
         <LocationInputGroup label="出発地" pointType="start" />
         <TransportSelection />
 
-        {waypoints.map((id, index) => (
+        {/* 'index' を '_index' に変更しました */}
+        {waypoints.map((id, _index) => (
           <React.Fragment key={`waypoint-group-${id}`}>
             <LocationInputGroup label={`中継地点${id}`} pointType={`waypoint-${id}`} />
             <TransportSelection />
