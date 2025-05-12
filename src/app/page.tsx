@@ -6,9 +6,8 @@ import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import Header from '@/components/Header';
 import ControlPanel from '@/components/ControlPanel';
 import AnimationControls from '@/components/AnimationControls';
-// import PreviewOutput from '@/components/PreviewOutput'; // PreviewOutput は現状使われていないようなのでコメントアウト
+// import PreviewOutput from '@/components/PreviewOutput';
 
-// 型定義
 export interface LocationPoint {
   id: string;
   name: string;
@@ -30,7 +29,7 @@ const MapWithNoSSR = dynamic(() => import('@/components/Map'), {
 
 export default function HomePage() {
   const initialTransportOptions: TransportOption[] = useMemo(() => [
-    { name: 'Car', label: '🚗' }, // デフォルトを車に変更
+    { name: 'Car', label: '🚗' },
     { name: 'Bus', label: '🚌' },
     { name: 'Plane', label: '✈️' },
     { name: 'Train', label: '🚆' },
@@ -46,14 +45,14 @@ export default function HomePage() {
   const [geocodingState, setGeocodingState] = useState<Record<string, 'idle' | 'loading' | 'error'>>({});
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentSegmentIndex, setCurrentSegmentIndex] = useState(0);
-  const [animationSpeedKps, setAnimationSpeedKps] = useState(5); // 初期値: 1kmあたり5秒 (1-60の範囲)
-  const [mapError, setMapError] = useState<string | null>(null); // マップ関連のエラーメッセージ
+  // ★ 新しい速度設定: 各区間の移動時間 (秒)
+  const [segmentDurationSeconds, setSegmentDurationSeconds] = useState(5); // デフォルト5秒
+  const [mapError, setMapError] = useState<string | null>(null);
 
-  // locations が変更されたらアニメーションをリセット
   useEffect(() => {
     setIsPlaying(false);
     setCurrentSegmentIndex(0);
-    setMapError(null); // 地点変更時はエラーもリセット
+    setMapError(null);
   }, [locations]);
 
   const handleLocationNameChange = useCallback((id: string, newName: string) => {
@@ -71,7 +70,7 @@ export default function HomePage() {
   }, []);
 
   const addWaypoint = useCallback(() => {
-    const newWaypointId = `waypoint-${Date.now()}`; // よりユニークなIDを生成
+    const newWaypointId = `waypoint-${Date.now()}`;
     setLocations(prevLocations => {
       const endIndex = prevLocations.findIndex(loc => loc.id === 'end');
       const newLocations = [...prevLocations];
@@ -98,11 +97,10 @@ export default function HomePage() {
       return;
     }
     setGeocodingState(prev => ({...prev, [locationId]: 'loading'}));
-    setMapError(null); // ジオコーディング開始時にエラーをクリア
+    setMapError(null);
     try {
-      const apiUrl = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(locationName)}&format=jsonv2&limit=1&countrycodes=jp`; // 日本国内に限定 (オプション)
-      // User-Agent はご自身の連絡先などに置き換えてください
-      const response = await fetch(apiUrl, { headers: { 'User-Agent': 'TravelRouteAnimationApp/1.0 (user@example.com)' } });
+      const apiUrl = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(locationName)}&format=jsonv2&limit=1&countrycodes=jp`;
+      const response = await fetch(apiUrl, { headers: { 'User-Agent': 'TravelRouteAnimationApp/1.0 (user@example.com)' } }); // 適切なUser-Agentを設定
       if (!response.ok) throw new Error(`ジオコーディングサーバーエラー: ${response.statusText} (${response.status})`);
       const data = await response.json();
       if (data && data.length > 0) {
@@ -137,13 +135,12 @@ export default function HomePage() {
     setIsPlaying(false);
     setCurrentSegmentIndex(0);
     setMapError(null);
-    // Mapコンポーネントがlocationsの変更を検知して自動で経路を再描画
-    // alert("経路情報を更新しました。地図上で経路が再描画されます。「再生」ボタンでアニメーションを開始できます。"); // UXによっては不要
   }, [locations]);
 
   const handleSaveProject = useCallback(() => {
     try {
-      const projectData = JSON.stringify({ locations, animationSpeedKps });
+      // ★ 保存するデータに segmentDurationSeconds を含める
+      const projectData = JSON.stringify({ locations, segmentDurationSeconds });
       localStorage.setItem('travelRouteProject', projectData);
       alert("プロジェクトを保存しました。");
     } catch (error) {
@@ -151,7 +148,7 @@ export default function HomePage() {
       alert("プロジェクトの保存に失敗しました。");
       setMapError("プロジェクトの保存に失敗しました。");
     }
-  }, [locations, animationSpeedKps]);
+  }, [locations, segmentDurationSeconds]); // ★ 依存配列に segmentDurationSeconds を追加
 
   const handleLoadProject = useCallback(() => {
     try {
@@ -159,9 +156,12 @@ export default function HomePage() {
       if (savedData) {
         const projectData = JSON.parse(savedData);
         if (projectData.locations) setLocations(projectData.locations);
-        if (typeof projectData.animationSpeedKps === 'number') {
-            const speed = Math.max(1, Math.min(60, Math.round(projectData.animationSpeedKps)));
-            setAnimationSpeedKps(speed);
+        // ★ 読み込むデータに segmentDurationSeconds があれば設定
+        if (typeof projectData.segmentDurationSeconds === 'number') {
+            const duration = Math.max(1, Math.min(600, Math.round(projectData.segmentDurationSeconds))); // 例: 1秒～600秒(10分)の範囲
+            setSegmentDurationSeconds(duration);
+        } else {
+            setSegmentDurationSeconds(5); // 保存データになければデフォルト5秒
         }
         alert("プロジェクトを読み込みました。");
         setIsPlaying(false);
@@ -187,7 +187,7 @@ export default function HomePage() {
     setMapError(null);
     setIsPlaying(prev => !prev);
     if (!isPlaying && currentSegmentIndex >= validLocations.length - 1 && validLocations.length > 1) {
-        setCurrentSegmentIndex(0); // 終了していたら最初から
+        setCurrentSegmentIndex(0);
     }
   }, [isPlaying, locations, currentSegmentIndex]);
 
@@ -197,19 +197,20 @@ export default function HomePage() {
     setMapError(null);
   }, []);
 
-  const handleSpeedChange = useCallback((newSpeed: number) => {
-    const validatedSpeed = Math.max(1, Math.min(60, Math.round(newSpeed))); // 1-60の範囲に丸める
-    setAnimationSpeedKps(validatedSpeed);
+  // ★ 速度設定ハンドラを区間移動時間用に変更
+  const handleDurationChange = useCallback((newDuration: number) => {
+    // 例: 1秒から600秒(10分)の範囲に丸める。必要に応じて調整。
+    const validatedDuration = Math.max(1, Math.min(600, Math.round(newDuration)));
+    setSegmentDurationSeconds(validatedDuration);
   }, []);
 
   const handleSegmentComplete = useCallback(() => {
     setCurrentSegmentIndex(prevIndex => {
       const nextIndex = prevIndex + 1;
       const validLocationsCount = locations.filter(loc => loc.lat !== undefined && loc.lng !== undefined).length;
-      if (nextIndex >= validLocationsCount - 1) { // 有効な地点の数に基づいて判定
-        setIsPlaying(false); // 全セグメント完了
-        // alert("アニメーションが完了しました。"); // オプションで完了通知
-        return 0; // 最初に戻る (または prevIndex のままにして停止状態にする)
+      if (nextIndex >= validLocationsCount - 1) {
+        setIsPlaying(false);
+        return 0;
       }
       return nextIndex;
     });
@@ -220,12 +221,12 @@ export default function HomePage() {
   }, []);
 
   return (
-    <div className="flex flex-col min-h-screen bg-slate-100 antialiased">
+    <div className="flex flex-col min-h-screen bg-slate-100 dark:bg-slate-50 antialiased">
       <Header />
       <div className="flex flex-col md:flex-row flex-1 p-2 md:p-4 gap-2 md:gap-4">
         <div className="w-full md:w-[380px] lg:w-[420px] flex-shrink-0">
           <ControlPanel
-            className="h-full" // ControlPanel側でflex-1とmin-h-0を適用想定
+            className="h-full"
             locations={locations}
             transportOptions={initialTransportOptions}
             geocodingState={geocodingState}
@@ -253,14 +254,14 @@ export default function HomePage() {
               </button>
             </div>
           )}
-          <main className="bg-white rounded-md shadow-md flex-1 min-h-[400px] md:min-h-[500px] lg:min-h-[600px] relative overflow-hidden">
-            {/* overflow-hidden を追加して地図がはみ出ないようにする */}
+          <main className="bg-white dark:bg-slate-800 rounded-md shadow-md flex-1 min-h-[400px] md:min-h-[500px] lg:min-h-[600px] relative overflow-hidden">
             <MapWithNoSSR
               locations={locations}
               transportOptions={initialTransportOptions}
               isPlaying={isPlaying}
               currentSegmentIndex={currentSegmentIndex}
-              animationSpeedKps={animationSpeedKps}
+              // ★ props名を segmentDurationSeconds に変更
+              segmentDurationSeconds={segmentDurationSeconds}
               onSegmentComplete={handleSegmentComplete}
               onRoutingError={handleMapRoutingError}
             />
@@ -269,12 +270,14 @@ export default function HomePage() {
             isPlaying={isPlaying}
             onPlayPause={handlePlayPauseToggle}
             onStop={handleStopAnimation}
-            speedKps={animationSpeedKps}
-            onSpeedKpsChange={handleSpeedChange}
+            // ★ props名を durationSeconds に変更
+            durationSeconds={segmentDurationSeconds}
+            // ★ props名を onDurationChange に変更
+            onDurationChange={handleDurationChange}
           />
         </div>
       </div>
-      {/* PreviewOutput は現状機能していないためコメントアウト
+      {/*
       <div className="p-2 md:p-4">
         <PreviewOutput />
       </div>
