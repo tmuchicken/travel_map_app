@@ -8,6 +8,7 @@ interface ControlPanelProps {
   locations: LocationPoint[];
   transportOptions: TransportOption[];
   geocodingState: Record<string, 'idle' | 'loading' | 'error'>;
+  pickingLocationId?: string | null; // ★ 修正: この行を追加
   onLocationNameChange: (id: string, newName: string) => void;
   onTransportChange: (id: string, newTransport: string) => void;
   onAddWaypoint: () => void;
@@ -16,7 +17,7 @@ interface ControlPanelProps {
   onSaveProject: () => void;
   onLoadProject: () => void;
   onSelectFromMap: (locationId: string) => void;
-  onGenerateRoute: () => void; // ★ 追加: ルート生成関数のためのprops
+  onGenerateRoute: () => void;
 }
 
 const LocationInputGroup: React.FC<{
@@ -25,12 +26,13 @@ const LocationInputGroup: React.FC<{
   value: string;
   error?: string;
   isLoading: boolean;
+  isPickingThisLocation: boolean; // ★ 追加: この地点が選択モード中かを示す
   onValueChange: (newValue: string) => void;
   onSearchClick: () => void;
   canRemove?: boolean; // 中継地点削除ボタン表示用
   onRemoveClick?: () => void; // 中継地点削除ハンドラ
   onSelectFromMapClick: () => void;
-}> = ({ label, pointType, value, error, isLoading, onValueChange, onSearchClick, canRemove, onRemoveClick, onSelectFromMapClick }) => {
+}> = ({ label, pointType, value, error, isLoading, isPickingThisLocation, onValueChange, onSearchClick, canRemove, onRemoveClick, onSelectFromMapClick }) => {
   return (
     <div className="mb-2">
       <label htmlFor={`${pointType}-input`} className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">{label}</label>
@@ -48,9 +50,11 @@ const LocationInputGroup: React.FC<{
         />
         <button
            onClick={onSelectFromMapClick}
-           className="p-2 bg-teal-600 text-white rounded-md hover:bg-teal-700 transition-colors disabled:opacity-50 flex items-center justify-center"
-           title="地図からこの地点を選択"
-           disabled={isLoading}
+           className={`p-2 text-white rounded-md transition-colors disabled:opacity-50 flex items-center justify-center ${
+            isPickingThisLocation ? 'bg-pink-600 hover:bg-pink-700' : 'bg-teal-600 hover:bg-teal-700'
+           }`}
+           title={isPickingThisLocation ? "地点選択をキャンセル" : "地図からこの地点を選択"}
+           disabled={isLoading} // 他の操作中は無効にした方が良い場合もある
         >
             <MapPin size={16} />
         </button>
@@ -107,6 +111,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
   locations,
   transportOptions,
   geocodingState,
+  pickingLocationId, // ★ propsとして受け取る
   onLocationNameChange,
   onTransportChange,
   onAddWaypoint,
@@ -115,7 +120,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
   onSaveProject,
   onLoadProject,
   onSelectFromMap,
-  onGenerateRoute, // ★ propsとして受け取る
+  onGenerateRoute,
 }) => {
   const startPoint = locations.find(loc => loc.id === 'start')!;
   const waypoints = locations.filter(loc => loc.id.startsWith('waypoint'));
@@ -134,6 +139,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
             value={startPoint.name}
             error={startPoint.error}
             isLoading={geocodingState[startPoint.id] === 'loading'}
+            isPickingThisLocation={pickingLocationId === startPoint.id} // ★ 追加
             onValueChange={(newName) => onLocationNameChange(startPoint.id, newName)}
             onSearchClick={() => onGeocodeLocation(startPoint.id, startPoint.name)}
             onSelectFromMapClick={() => onSelectFromMap(startPoint.id)}
@@ -154,6 +160,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
               value={waypoint.name}
               error={waypoint.error}
               isLoading={geocodingState[waypoint.id] === 'loading'}
+              isPickingThisLocation={pickingLocationId === waypoint.id} // ★ 追加
               onValueChange={(newName) => onLocationNameChange(waypoint.id, newName)}
               onSearchClick={() => onGeocodeLocation(waypoint.id, waypoint.name)}
               canRemove={true}
@@ -176,6 +183,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
             value={endPoint.name}
             error={endPoint.error}
             isLoading={geocodingState[endPoint.id] === 'loading'}
+            isPickingThisLocation={pickingLocationId === endPoint.id} // ★ 追加
             onValueChange={(newName) => onLocationNameChange(endPoint.id, newName)}
             onSearchClick={() => onGeocodeLocation(endPoint.id, endPoint.name)}
             onSelectFromMapClick={() => onSelectFromMap(endPoint.id)}
@@ -191,7 +199,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
             <Plus size={16} className="mr-1" /> 中継地点を追加
           </button>
           <button
-            onClick={onGenerateRoute} // ★ 修正: propsから渡された関数を呼び出す
+            onClick={onGenerateRoute}
             className="flex-1 py-2 px-3 bg-blue-600 text-white text-sm rounded-md hover:bg-blue-700 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             ルートを生成/更新

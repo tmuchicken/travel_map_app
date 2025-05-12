@@ -1,6 +1,6 @@
 // src/components/AnimationControls.tsx
 import React from 'react';
-// ★ 修正: 未使用の Film アイコンを確実に削除
+// ★ 修正: 未使用の Film アイコンを削除
 import { Play, Pause, Square, Image as ImageIcon, Gift, Share2, Video, VideoOff } from 'lucide-react';
 
 interface AnimationControlsProps {
@@ -98,7 +98,7 @@ const AnimationControls: React.FC<AnimationControlsProps> = ({
                 : 'bg-blue-600 hover:bg-blue-700'
             } disabled:opacity-50 disabled:cursor-not-allowed`}
             title={isRecording ? "録画停止" : "録画開始"}
-            disabled={isRecording} // 録画中は「録画停止」のみ有効、録画中でなければ「録画開始」が有効
+            disabled={isRecording}
           >
             {isRecording ? (
               <>
