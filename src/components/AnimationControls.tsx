@@ -1,7 +1,7 @@
 // src/components/AnimationControls.tsx
 import React from 'react';
-// ★ 修正: 未使用の Film アイコンを削除
-import { Play, Pause, Square, Image as ImageIcon, Gift, Share2, Video, VideoOff } from 'lucide-react';
+// Video, VideoOff アイコンを削除
+import { Play, Pause, Square, Image as ImageIcon, Gift, Share2 } from 'lucide-react';
 
 interface AnimationControlsProps {
   isPlaying: boolean;
@@ -9,9 +9,7 @@ interface AnimationControlsProps {
   onStop: () => void;
   durationSeconds: number;
   onDurationChange: (newDurationSeconds: number) => void;
-  isRecording: boolean;
-  onStartRecording: () => void;
-  onStopRecording: () => void;
+  // isRecording, onStartRecording, onStopRecording を削除
 }
 
 const AnimationControls: React.FC<AnimationControlsProps> = ({
@@ -20,9 +18,7 @@ const AnimationControls: React.FC<AnimationControlsProps> = ({
   onStop,
   durationSeconds,
   onDurationChange,
-  isRecording,
-  onStartRecording,
-  onStopRecording,
+  // isRecording, onStartRecording, onStopRecording を引数から削除
 }) => {
 
   const handleDurationInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -60,7 +56,7 @@ const AnimationControls: React.FC<AnimationControlsProps> = ({
             onClick={onPlayPause}
             className="p-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50"
             title={isPlaying ? "一時停止" : "再生"}
-            disabled={isRecording}
+            // disabled={isRecording} を削除 (または isRecording が常に false として評価されるので実質不要)
           >
             {isPlaying ? <Pause size={20} /> : <Play size={20} />}
           </button>
@@ -68,7 +64,7 @@ const AnimationControls: React.FC<AnimationControlsProps> = ({
             onClick={onStop}
             className="p-2 bg-slate-500 text-white rounded-md hover:bg-slate-600 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-opacity-50"
             title="停止"
-            disabled={isRecording}
+            // disabled={isRecording} を削除
           >
             <Square size={20} />
           </button>
@@ -84,33 +80,13 @@ const AnimationControls: React.FC<AnimationControlsProps> = ({
               onChange={handleDurationInputChange}
               onBlur={handleDurationInputBlur}
               className="w-20 p-1 border border-gray-300 dark:border-slate-500 rounded-md text-sm bg-white dark:bg-slate-600 dark:text-slate-50 focus:ring-blue-500 focus:border-blue-500"
-              disabled={isRecording}
+              // disabled={isRecording} を削除
             />
           </div>
         </div>
         {/* 出力関連ボタン */}
         <div className="flex items-center space-x-1 flex-wrap justify-center gap-1 mt-2 sm:mt-0">
-          <button
-            onClick={isRecording ? onStopRecording : onStartRecording}
-            className={`px-2 py-1 text-xs text-white rounded-md transition-colors flex items-center ${
-              isRecording
-                ? 'bg-red-600 hover:bg-red-700'
-                : 'bg-blue-600 hover:bg-blue-700'
-            } disabled:opacity-50 disabled:cursor-not-allowed`}
-            title={isRecording ? "録画停止" : "録画開始"}
-            disabled={isRecording}
-          >
-            {isRecording ? (
-              <>
-                <VideoOff size={14} className="mr-1"/>録画停止
-                <span className="ml-1.5 w-2 h-2 bg-white rounded-full animate-pulse"></span>
-              </>
-            ) : (
-              <>
-                <Video size={14} className="mr-1"/>録画開始
-              </>
-            )}
-          </button>
+          {/* 録画開始/停止ボタンを削除 */}
           <button className="px-2 py-1 text-xs bg-slate-500 text-white rounded-md hover:bg-slate-600 transition-colors flex items-center opacity-50 cursor-not-allowed" title="画像保存 (未実装)" disabled>
             <ImageIcon size={14} className="mr-1"/>画像保存
           </button>
