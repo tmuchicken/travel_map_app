@@ -2,7 +2,7 @@
 "use client";
 
 import dynamic from 'next/dynamic';
-import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import Header from '@/components/Header';
 import ControlPanel from '@/components/ControlPanel';
 import AnimationControls from '@/components/AnimationControls';
