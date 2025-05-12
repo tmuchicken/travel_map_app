@@ -200,13 +200,13 @@ const Map: React.FC<MapProps> = ({
         activeRoutingControls.current = [];
         layerRefs.current.forEach(layer => {
           if (mapInstanceRef.current && mapInstanceRef.current.hasLayer(layer)) {
-            try { mapInstanceRef.current.removeLayer(layer); } catch (e) { console.warn("Error removing layer during cleanup:", e); e}
+            try { mapInstanceRef.current.removeLayer(layer); } catch (e) { console.warn("Error removing layer during cleanup:", e); }
           }
         });
         layerRefs.current = [];
         markerRefs.current.forEach(marker => {
           if (mapInstanceRef.current && mapInstanceRef.current.hasLayer(marker)) {
-             try { mapInstanceRef.current.removeLayer(marker); } catch (e) { console.warn("Error removing marker during cleanup:", e); e}
+             try { mapInstanceRef.current.removeLayer(marker); } catch (e) { console.warn("Error removing marker during cleanup:", e); }
           }
         });
         markerRefs.current = [];
@@ -355,11 +355,10 @@ const Map: React.FC<MapProps> = ({
             addWaypoints: false,
             fitSelectedRoutes: false,
             lineOptions: { styles: [{ color: 'blue', opacity: 0.7, weight: 5 }], extendToWaypoints: true, missingRouteTolerance: 100 },
-          }); // ★ メソッドチェーンをここで終了
+          });
 
           // 経路が見つかったときのイベントハンドラを設定
-          // ★ 修正点: .on() の呼び出しの結果を変数に代入することで、ESLintのエラーを回避
-          const routesFoundHandler = routingControl.on('routesfound', function(this: L.Routing.Control, e: L.Routing.RoutingResultEvent) {
+          routingControl.on('routesfound', function(this: L.Routing.Control, e: L.Routing.RoutingResultEvent) {
             // 現在の経路計算世代と一致しない場合は処理をスキップ (古い計算結果を無視)
             if (currentGeneration !== routeCalculationGenerationRef.current || !mapInstanceRef.current) {
               // 古いコントロールがアクティブなリストに残っている場合は削除
@@ -396,8 +395,7 @@ const Map: React.FC<MapProps> = ({
           });
 
           // 経路計算中にエラーが発生したときのイベントハンドラを設定
-          // ★ 修正点: .on() の呼び出しの結果を変数に代入することで、ESLintのエラーを回避
-          const routingErrorHandler = routingControl.on('routingerror', function(this: L.Routing.Control, errEvent: L.Routing.RoutingErrorEvent) {
+          routingControl.on('routingerror', function(this: L.Routing.Control, errEvent: L.Routing.RoutingErrorEvent) {
             // 現在の経路計算世代と一致しない場合は処理をスキップ
             if (currentGeneration !== routeCalculationGenerationRef.current || !mapInstanceRef.current) {
               // 古いコントロールがアクティブなリストに残っている場合は削除
@@ -424,9 +422,9 @@ const Map: React.FC<MapProps> = ({
           });
 
 
-          // マップインスタンスが存在する場合、ルーティングコントロールを地図に追加し、アクティブなリストに追加
+          // マップインスタンスが存在する場合、ルーティングコントロールを地図に追加し、activeRoutingControls に格納
           if (mapInstanceRef.current) {
-            // addTo() は L.Routing.Control インスタンスを返すので、その結果を activeRoutingControls に追加
+            // addTo() は追加したコントロール自身を返す
             const addedControl = routingControl.addTo(mapInstanceRef.current);
             activeRoutingControls.current.push(addedControl);
           } else {
@@ -497,7 +495,7 @@ const Map: React.FC<MapProps> = ({
         } else {
              // アニメーションに必要な情報が不足している場合
              currentAnimationSegmentCoordsRef.current = []; // アニメーション座標をクリア
-             // アニメーションマーкерが存在する場合は削除
+             // アニメーションマーカーが存在する場合は削除
              if (animatedMarkerRef.current && mapInstanceRef.current && mapInstanceRef.current.hasLayer(animatedMarkerRef.current)) {
                 mapInstanceRef.current.removeLayer(animatedMarkerRef.current);
                 animatedMarkerRef.current = null;
