@@ -6,6 +6,7 @@ import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import Header from '@/components/Header';
 import ControlPanel from '@/components/ControlPanel';
 import AnimationControls from '@/components/AnimationControls';
+import L from 'leaflet'; // LeafletをインポートしてLatLng型を使用可能に
 // import PreviewOutput from '@/components/PreviewOutput';
 
 export interface LocationPoint {
@@ -24,7 +25,7 @@ export interface TransportOption {
 
 const MapWithNoSSR = dynamic(() => import('@/components/Map'), {
   ssr: false,
-  loading: () => <div className="flex justify-center items-center h-full bg-gray-200"><p>地図を読み込み中です...</p></div>,
+  loading: () => <div className="flex justify-center items-center h-full bg-gray-200 dark:bg-gray-700"><p className="text-slate-700 dark:text-slate-200">地図を読み込み中です...</p></div>,
 });
 
 export default function HomePage() {
@@ -45,9 +46,9 @@ export default function HomePage() {
   const [geocodingState, setGeocodingState] = useState<Record<string, 'idle' | 'loading' | 'error'>>({});
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentSegmentIndex, setCurrentSegmentIndex] = useState(0);
-  // ★ 新しい速度設定: 各区間の移動時間 (秒)
-  const [segmentDurationSeconds, setSegmentDurationSeconds] = useState(5); // デフォルト5秒
+  const [segmentDurationSeconds, setSegmentDurationSeconds] = useState(5);
   const [mapError, setMapError] = useState<string | null>(null);
+  const [pickingLocationId, setPickingLocationId] = useState<string | null>(null);
 
   useEffect(() => {
     setIsPlaying(false);
@@ -99,8 +100,8 @@ export default function HomePage() {
     setGeocodingState(prev => ({...prev, [locationId]: 'loading'}));
     setMapError(null);
     try {
-      const apiUrl = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(locationName)}&format=jsonv2&limit=1&countrycodes=jp`;
-      const response = await fetch(apiUrl, { headers: { 'User-Agent': 'TravelRouteAnimationApp/1.0 (user@example.com)' } }); // 適切なUser-Agentを設定
+      const apiUrl = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(locationName)}&format=jsonv2&limit=1`;
+      const response = await fetch(apiUrl, { headers: { 'User-Agent': 'TravelRouteAnimationApp/1.0 (user@example.com)' } });
       if (!response.ok) throw new Error(`ジオコーディングサーバーエラー: ${response.statusText} (${response.status})`);
       const data = await response.json();
       if (data && data.length > 0) {
@@ -126,20 +127,63 @@ export default function HomePage() {
     }
   }, []);
 
+  const handleReverseGeocodeLocation = useCallback(async (locationId: string, latlng: L.LatLng) => {
+    setGeocodingState(prev => ({...prev, [locationId]: 'loading'}));
+    setMapError(null);
+    try {
+      const apiUrl = `https://nominatim.openstreetmap.org/reverse?lat=${latlng.lat}&lon=${latlng.lng}&format=jsonv2`;
+      const response = await fetch(apiUrl, { headers: { 'User-Agent': 'TravelRouteAnimationApp/1.0 (user@example.com)' } });
+      if (!response.ok) throw new Error(`逆ジオコーディングサーバーエラー: ${response.statusText} (${response.status})`);
+      const data = await response.json();
+      if (data && data.display_name) {
+        const display_name = data.display_name;
+        setLocations(prevLocations =>
+          prevLocations.map(loc =>
+            loc.id === locationId ? { ...loc, lat: latlng.lat, lng: latlng.lng, name: display_name, error: undefined } : loc
+          )
+        );
+        setGeocodingState(prev => ({...prev, [locationId]: 'idle'}));
+      } else {
+        setLocations(prevLocations =>
+          prevLocations.map(loc => (loc.id === locationId ? { ...loc, lat: latlng.lat, lng: latlng.lng, name: `地点 (${latlng.lat.toFixed(4)}, ${latlng.lng.toFixed(4)})`, error: '地名が見つかりませんでした。' } : loc))
+        );
+         setGeocodingState(prev => ({...prev, [locationId]: 'idle'}));
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : '逆ジオコーディング中に不明なエラーが発生しました。';
+       setLocations(prevLocations =>
+          prevLocations.map(loc => (loc.id === locationId ? { ...loc, lat: latlng.lat, lng: latlng.lng, name: `地点 (${latlng.lat.toFixed(4)}, ${latlng.lng.toFixed(4)})`, error: `逆ジオコーディングエラー: ${errorMessage}` } : loc))
+        );
+      setGeocodingState(prev => ({...prev, [locationId]: 'error'}));
+    } finally {
+        setPickingLocationId(null);
+    }
+  }, []);
+
+  // ★ 修正: ControlPanelに渡すための関数
   const handleGenerateRoute = useCallback(() => {
     const validLocations = locations.filter(loc => loc.lat !== undefined && loc.lng !== undefined);
     if (validLocations.length < 2) {
       setMapError("ルートを生成するには、出発地と目的地の両方に有効な座標が必要です。各地点の「検索」ボタンを押して座標を取得してください。");
       return;
     }
-    setIsPlaying(false);
-    setCurrentSegmentIndex(0);
-    setMapError(null);
+    setIsPlaying(false); // アニメーションを停止
+    setCurrentSegmentIndex(0); // アニメーションを最初から
+    setMapError(null); // エラーメッセージをクリア
+    // ここでMapコンポーネントに経路再生成を促す処理を将来的に追加する可能性があります。
+    // 現状では、locationsが更新されるとMapコンポーネントのuseEffectが経路を再描画するため、
+    // この関数内での明示的な再描画指示は不要です。
+    // 主な役割はUIの状態リセットとエラーチェックです。
+    console.log("Route generation triggered. Locations:", locations);
   }, [locations]);
 
+
   const handleSaveProject = useCallback(() => {
+    if (pickingLocationId !== null) {
+        setMapError("地点選択モード中はプロジェクトを保存できません。地点を選択するかキャンセルしてください。");
+        return;
+    }
     try {
-      // ★ 保存するデータに segmentDurationSeconds を含める
       const projectData = JSON.stringify({ locations, segmentDurationSeconds });
       localStorage.setItem('travelRouteProject', projectData);
       alert("プロジェクトを保存しました。");
@@ -148,20 +192,23 @@ export default function HomePage() {
       alert("プロジェクトの保存に失敗しました。");
       setMapError("プロジェクトの保存に失敗しました。");
     }
-  }, [locations, segmentDurationSeconds]); // ★ 依存配列に segmentDurationSeconds を追加
+  }, [locations, segmentDurationSeconds, pickingLocationId]);
 
   const handleLoadProject = useCallback(() => {
+    if (pickingLocationId !== null) {
+        setMapError("地点選択モード中はプロジェクトを読み込めません。地点を選択するかキャンセルしてください。");
+        return;
+    }
     try {
       const savedData = localStorage.getItem('travelRouteProject');
       if (savedData) {
         const projectData = JSON.parse(savedData);
         if (projectData.locations) setLocations(projectData.locations);
-        // ★ 読み込むデータに segmentDurationSeconds があれば設定
         if (typeof projectData.segmentDurationSeconds === 'number') {
-            const duration = Math.max(1, Math.min(600, Math.round(projectData.segmentDurationSeconds))); // 例: 1秒～600秒(10分)の範囲
+            const duration = Math.max(1, Math.min(600, Math.round(projectData.segmentDurationSeconds)));
             setSegmentDurationSeconds(duration);
         } else {
-            setSegmentDurationSeconds(5); // 保存データになければデフォルト5秒
+            setSegmentDurationSeconds(5);
         }
         alert("プロジェクトを読み込みました。");
         setIsPlaying(false);
@@ -175,10 +222,14 @@ export default function HomePage() {
       alert("プロジェクトの読み込みに失敗しました。");
       setMapError("プロジェクトの読み込みに失敗しました。");
     }
-  }, []);
+  }, [pickingLocationId]);
 
 
   const handlePlayPauseToggle = useCallback(() => {
+     if (pickingLocationId !== null) {
+        setMapError("地点選択モード中はアニメーションを操作できません。地点を選択するかキャンセルしてください。");
+        return;
+    }
     const validLocations = locations.filter(loc => loc.lat !== undefined && loc.lng !== undefined);
     if (validLocations.length < 2 && !isPlaying) {
         setMapError("アニメーションを開始するには、まず有効な経路を生成してください。");
@@ -189,28 +240,35 @@ export default function HomePage() {
     if (!isPlaying && currentSegmentIndex >= validLocations.length - 1 && validLocations.length > 1) {
         setCurrentSegmentIndex(0);
     }
-  }, [isPlaying, locations, currentSegmentIndex]);
+  }, [isPlaying, locations, currentSegmentIndex, pickingLocationId]);
 
   const handleStopAnimation = useCallback(() => {
+     if (pickingLocationId !== null) {
+        setMapError("地点選択モード中はアニメーションを操作できません。地点を選択するかキャンセルしてください。");
+        return;
+    }
     setIsPlaying(false);
     setCurrentSegmentIndex(0);
     setMapError(null);
-  }, []);
+  }, [pickingLocationId]);
 
-  // ★ 速度設定ハンドラを区間移動時間用に変更
   const handleDurationChange = useCallback((newDuration: number) => {
-    // 例: 1秒から600秒(10分)の範囲に丸める。必要に応じて調整。
+     if (pickingLocationId !== null) {
+        setMapError("地点選択モード中はアニメーション速度を変更できません。地点を選択するかキャンセルしてください。");
+        return;
+    }
     const validatedDuration = Math.max(1, Math.min(600, Math.round(newDuration)));
     setSegmentDurationSeconds(validatedDuration);
-  }, []);
+  }, [pickingLocationId]);
+
 
   const handleSegmentComplete = useCallback(() => {
     setCurrentSegmentIndex(prevIndex => {
       const nextIndex = prevIndex + 1;
       const validLocationsCount = locations.filter(loc => loc.lat !== undefined && loc.lng !== undefined).length;
       if (nextIndex >= validLocationsCount - 1) {
-        setIsPlaying(false);
-        return 0;
+        setIsPlaying(false); // アニメーション終了
+        return 0; // 最初に戻るか、最後のインデックスで止めるかは要件次第 (ここでは最初に戻る)
       }
       return nextIndex;
     });
@@ -220,8 +278,40 @@ export default function HomePage() {
     setMapError(message);
   }, []);
 
+  const handleSelectLocationFromMap = useCallback((locationId: string) => {
+    if (isPlaying) {
+        setMapError("アニメーション再生中は地点を選択できません。アニメーションを停止してください。");
+        return;
+    }
+    if (pickingLocationId !== null) {
+         setMapError(`現在、別の地点 (${locations.find(loc => loc.id === pickingLocationId)?.name || pickingLocationId}) を選択中です。まずそちらを完了またはキャンセルしてください。`);
+        return;
+    }
+    setPickingLocationId(locationId);
+    setMapError(`地図上で「${locations.find(loc => loc.id === locationId)?.name || locationId}」の地点をクリックしてください。`);
+  }, [isPlaying, pickingLocationId, locations]);
+
+  const handleMapClickForPicking = useCallback((latlng: L.LatLng) => {
+    if (pickingLocationId !== null) {
+      handleReverseGeocodeLocation(pickingLocationId, latlng);
+    }
+  }, [pickingLocationId, handleReverseGeocodeLocation]);
+
+  const handleCancelPicking = useCallback(() => {
+    setPickingLocationId(null);
+    setMapError(null);
+    setGeocodingState(prev => {
+        const newState = {...prev};
+        if (pickingLocationId && newState[pickingLocationId] === 'loading') {
+             newState[pickingLocationId] = 'idle';
+        }
+        return newState;
+    });
+  }, [pickingLocationId]);
+
+
   return (
-    <div className="flex flex-col min-h-screen bg-slate-100 dark:bg-slate-50 antialiased">
+    <div className="flex flex-col min-h-screen bg-slate-100 dark:bg-slate-900 antialiased">
       <Header />
       <div className="flex flex-col md:flex-row flex-1 p-2 md:p-4 gap-2 md:gap-4">
         <div className="w-full md:w-[380px] lg:w-[420px] flex-shrink-0">
@@ -235,12 +325,26 @@ export default function HomePage() {
             onAddWaypoint={addWaypoint}
             onRemoveWaypoint={removeWaypoint}
             onGeocodeLocation={handleGeocodeLocation}
-            onGenerateRoute={handleGenerateRoute}
             onSaveProject={handleSaveProject}
             onLoadProject={handleLoadProject}
+            onSelectFromMap={handleSelectLocationFromMap}
+            onGenerateRoute={handleGenerateRoute} // ★ 修正: handleGenerateRouteを渡す
           />
         </div>
         <div className="flex-1 flex flex-col gap-2 md:gap-4">
+           {pickingLocationId !== null && (
+                <div className="p-3 bg-blue-100 border border-blue-400 text-blue-700 rounded-md shadow-sm relative" role="status">
+                    <strong className="font-bold">地点選択モード: </strong>
+                    <span className="block sm:inline">{`地図上で「${locations.find(loc => loc.id === pickingLocationId)?.name || pickingLocationId}」を選択してください。`}</span>
+                     <button
+                        onClick={handleCancelPicking}
+                        className="absolute top-0 bottom-0 right-0 px-3 py-2 text-blue-500 hover:text-blue-700"
+                        aria-label="キャンセル"
+                    >
+                        <svg className="fill-current h-5 w-5" role="button" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><title>キャンセル</title><path d="M14.348 14.849a1.2 1.2 0 0 1-1.697 0L10 11.819l-2.651 3.029a1.2 1.2 0 1 1-1.697-1.697l2.758-3.15-2.759-3.152a1.2 1.2 0 1 1 1.697-1.697L10 8.183l2.651-3.031a1.2 1.2 0 1 1 1.697 1.697l-2.758 3.152 2.758 3.15a1.2 1.2 0 0 1 0 1.698z"/></svg>
+                    </button>
+                </div>
+            )}
           {mapError && (
             <div className="p-3 bg-red-100 border border-red-400 text-red-700 rounded-md shadow-sm relative" role="alert">
               <strong className="font-bold">情報: </strong>
@@ -260,19 +364,18 @@ export default function HomePage() {
               transportOptions={initialTransportOptions}
               isPlaying={isPlaying}
               currentSegmentIndex={currentSegmentIndex}
-              // ★ props名を segmentDurationSeconds に変更
               segmentDurationSeconds={segmentDurationSeconds}
               onSegmentComplete={handleSegmentComplete}
               onRoutingError={handleMapRoutingError}
+              isPickingLocation={pickingLocationId !== null}
+              onMapClickForPicking={handleMapClickForPicking}
             />
           </main>
           <AnimationControls
             isPlaying={isPlaying}
             onPlayPause={handlePlayPauseToggle}
             onStop={handleStopAnimation}
-            // ★ props名を durationSeconds に変更
             durationSeconds={segmentDurationSeconds}
-            // ★ props名を onDurationChange に変更
             onDurationChange={handleDurationChange}
           />
         </div>
