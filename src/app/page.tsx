@@ -2,12 +2,12 @@
 "use client";
 
 import dynamic from 'next/dynamic';
-import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import Header from '@/components/Header';
 import ControlPanel from '@/components/ControlPanel';
 import AnimationControls from '@/components/AnimationControls';
-import L from 'leaflet'; // LeafletをインポートしてLatLng型を使用可能に
-// import PreviewOutput from '@/components/PreviewOutput';
+import L from 'leaflet';
+import { saveAs } from 'file-saver';
 
 export interface LocationPoint {
   id: string;
@@ -50,11 +50,13 @@ export default function HomePage() {
   const [mapError, setMapError] = useState<string | null>(null);
   const [pickingLocationId, setPickingLocationId] = useState<string | null>(null);
 
+  const [isRecording, setIsRecording] = useState(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recordedChunksRef = useRef<Blob[]>([]);
+
   useEffect(() => {
     setIsPlaying(false);
     setCurrentSegmentIndex(0);
-    // locations変更時にmapErrorをクリアしないように変更 (ピン刺しモードのメッセージを維持するため)
-    // setMapError(null);
   }, [locations]);
 
   const handleLocationNameChange = useCallback((id: string, newName: string) => {
@@ -62,7 +64,7 @@ export default function HomePage() {
       prevLocations.map(loc => (loc.id === id ? { ...loc, name: newName, lat: undefined, lng: undefined, error: undefined } : loc))
     );
     setGeocodingState(prev => ({...prev, [id]: 'idle'}));
-    setMapError(null); // 手動変更時はエラークリア
+    setMapError(null);
   }, []);
 
   const handleTransportChange = useCallback((id: string, newTransport: string) => {
@@ -130,7 +132,7 @@ export default function HomePage() {
 
   const handleReverseGeocodeLocation = useCallback(async (locationId: string, latlng: L.LatLng) => {
     setGeocodingState(prev => ({...prev, [locationId]: 'loading'}));
-    setMapError(null); // 逆ジオコーディング開始時にエラーをクリア
+    setMapError(null);
     try {
       const apiUrl = `https://nominatim.openstreetmap.org/reverse?lat=${latlng.lat}&lon=${latlng.lng}&format=jsonv2`;
       const response = await fetch(apiUrl, { headers: { 'User-Agent': 'TravelRouteAnimationApp/1.0 (user@example.com)' } });
@@ -163,7 +165,6 @@ export default function HomePage() {
     }
   }, []);
 
-
   const handleGenerateRoute = useCallback(() => {
     const validLocations = locations.filter(loc => loc.lat !== undefined && loc.lng !== undefined);
     if (validLocations.length < 2) {
@@ -175,7 +176,6 @@ export default function HomePage() {
     setMapError(null);
     console.log("Route generation triggered. Locations:", locations);
   }, [locations]);
-
 
   const handleSaveProject = useCallback(() => {
     if (pickingLocationId !== null) {
@@ -223,10 +223,34 @@ export default function HomePage() {
     }
   }, [pickingLocationId]);
 
+  const stopRecording = useCallback(() => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      mediaRecorderRef.current.stop();
+    }
+    setIsRecording(false);
+    console.log("Stop recording requested.");
+  }, []);
+
+  const handleStopAnimation = useCallback(() => {
+     if (pickingLocationId !== null) {
+        setMapError("地点選択モード中はアニメーションを操作できません。地点を選択するかキャンセルしてください。");
+        return;
+    }
+    if (isRecording) {
+      stopRecording();
+    }
+    setIsPlaying(false);
+    setCurrentSegmentIndex(0);
+    setMapError(null);
+  }, [pickingLocationId, isRecording, stopRecording]);
 
   const handlePlayPauseToggle = useCallback(() => {
      if (pickingLocationId !== null) {
         setMapError("地点選択モード中はアニメーションを操作できません。地点を選択するかキャンセルしてください。");
+        return;
+    }
+    if (isRecording) {
+        setMapError("録画中は再生/一時停止できません。");
         return;
     }
     const validLocations = locations.filter(loc => loc.lat !== undefined && loc.lng !== undefined);
@@ -239,45 +263,53 @@ export default function HomePage() {
     if (!isPlaying && currentSegmentIndex >= validLocations.length - 1 && validLocations.length > 1) {
         setCurrentSegmentIndex(0);
     }
-  }, [isPlaying, locations, currentSegmentIndex, pickingLocationId]);
-
-  const handleStopAnimation = useCallback(() => {
-     if (pickingLocationId !== null) {
-        setMapError("地点選択モード中はアニメーションを操作できません。地点を選択するかキャンセルしてください。");
-        return;
-    }
-    setIsPlaying(false);
-    setCurrentSegmentIndex(0);
-    setMapError(null);
-  }, [pickingLocationId]);
+  }, [isPlaying, locations, currentSegmentIndex, pickingLocationId, isRecording]);
 
   const handleDurationChange = useCallback((newDuration: number) => {
      if (pickingLocationId !== null) {
         setMapError("地点選択モード中はアニメーション速度を変更できません。地点を選択するかキャンセルしてください。");
         return;
     }
+    if (isRecording) {
+        setMapError("録画中はアニメーション速度を変更できません。");
+        return;
+    }
     const validatedDuration = Math.max(1, Math.min(600, Math.round(newDuration)));
     setSegmentDurationSeconds(validatedDuration);
-  }, [pickingLocationId]);
+  }, [pickingLocationId, isRecording]);
 
-
-  const handleSegmentComplete = useCallback(() => {
+   const handleSegmentComplete = useCallback(() => {
     setCurrentSegmentIndex(prevIndex => {
       const nextIndex = prevIndex + 1;
       const validLocationsCount = locations.filter(loc => loc.lat !== undefined && loc.lng !== undefined).length;
       if (nextIndex >= validLocationsCount - 1) {
         setIsPlaying(false);
+        if (isRecording) {
+            stopRecording();
+        }
         return 0;
       }
       return nextIndex;
     });
-  }, [locations]);
+  }, [locations, isRecording, stopRecording]);
 
   const handleMapRoutingError = useCallback((message: string) => {
     if (!pickingLocationId) {
         setMapError(message);
     }
   }, [pickingLocationId]);
+
+  const getPickingLocationLabel = (id: string | null, locs: LocationPoint[]): string => {
+    if (!id) return '';
+    if (id === 'start') return '出発地';
+    if (id === 'end') return '目的地';
+    if (id.startsWith('waypoint')) {
+      const index = locs.findIndex(loc => loc.id === id);
+      const waypointIndex = index > 0 ? index : '?';
+      return `中継地点 ${waypointIndex}`;
+    }
+    return id;
+  };
 
   const handleSelectLocationFromMap = useCallback((locationId: string) => {
     if (isPlaying) {
@@ -289,8 +321,8 @@ export default function HomePage() {
         return;
     }
     setPickingLocationId(locationId);
-    setMapError(null); // 既存のエラーをクリア
-  }, [isPlaying, pickingLocationId, locations]); // locations を依存配列に追加
+    setMapError(null);
+  }, [isPlaying, pickingLocationId, locations]);
 
   const handleMapClickForPicking = useCallback((latlng: L.LatLng) => {
     if (pickingLocationId !== null) {
@@ -299,34 +331,99 @@ export default function HomePage() {
   }, [pickingLocationId, handleReverseGeocodeLocation]);
 
   const handleCancelPicking = useCallback(() => {
+    const cancelledPickingId = pickingLocationId;
     setPickingLocationId(null);
     setMapError(null);
     setGeocodingState(prev => {
         const newState = {...prev};
-        // ★ pickingLocationId が null になる前に参照する必要があるため、
-        //    キャンセル処理の最初に pickingLocationId の値を変数に保持
-        const cancelledPickingId = pickingLocationId;
         if (cancelledPickingId && newState[cancelledPickingId] === 'loading') {
              newState[cancelledPickingId] = 'idle';
         }
         return newState;
     });
-  }, [pickingLocationId]); // pickingLocationId を依存配列に追加
+  }, [pickingLocationId]);
 
 
-  // ★ 追加: ピン刺し中の地点ラベルを取得するヘルパー関数
-  const getPickingLocationLabel = (id: string | null, locs: LocationPoint[]): string => {
-    if (!id) return '';
-    if (id === 'start') return '出発地';
-    if (id === 'end') return '目的地';
-    if (id.startsWith('waypoint')) {
-      const index = locs.findIndex(loc => loc.id === id);
-      // 出発地を除いたインデックスを計算 (出発地が0番目なので)
-      const waypointIndex = index > 0 ? index : '?'; // 見つからない場合は '?'
-      return `中継地点 ${waypointIndex}`;
+  const startRecording = useCallback(async () => {
+    if (!window.MediaRecorder) {
+      setMapError('お使いのブラウザは録画機能に対応していません。');
+      return;
     }
-    return id; // フォールバック
-  };
+    if (!isPlaying) {
+        setMapError('アニメーションを再生してから録画を開始してください。');
+        return;
+    }
+
+    const mapElement = document.getElementById('map-container');
+    if (!mapElement) {
+      setMapError('地図要素が見つかりません。録画を開始できません。');
+      return;
+    }
+
+    try {
+      // @ts-expect-error Experimental API
+      const stream: MediaStream = await mapElement.captureStream(30);
+
+      const options = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
+                      ? { mimeType: 'video/webm;codecs=vp9', videoBitsPerSecond: 2500000 }
+                      : MediaRecorder.isTypeSupported('video/webm')
+                      ? { mimeType: 'video/webm', videoBitsPerSecond: 2500000 }
+                      : { videoBitsPerSecond: 2500000 };
+
+      mediaRecorderRef.current = new MediaRecorder(stream, options);
+      recordedChunksRef.current = [];
+
+      mediaRecorderRef.current.ondataavailable = (event: BlobEvent) => {
+        if (event.data.size > 0) {
+          recordedChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorderRef.current.onstop = () => {
+        if (recordedChunksRef.current.length === 0) {
+          setMapError("録画データが空です。");
+          stream.getTracks().forEach((track: MediaStreamTrack) => track.stop());
+          return;
+        }
+        try {
+            const blob = new Blob(recordedChunksRef.current, { type: options.mimeType || 'video/webm' });
+            const timestamp = new Date().toISOString().replace(/[:.-]/g, '').slice(0, 14);
+            const filename = `travel-animation-${timestamp}.webm`;
+            saveAs(blob, filename);
+        } catch(saveError) {
+             console.error("Failed to save video:", saveError);
+             setMapError("動画ファイルの保存に失敗しました。");
+        } finally {
+            recordedChunksRef.current = [];
+            stream.getTracks().forEach((track: MediaStreamTrack) => track.stop());
+        }
+      };
+
+      mediaRecorderRef.current.onerror = (event: Event) => {
+        console.error("MediaRecorder error:", event);
+        let errorMessage = '録画中に不明なエラーが発生しました。';
+        if (event instanceof DOMException) {
+          errorMessage = event.message;
+        } else if ('error' in event && event.error instanceof Error) {
+          // ★ 修正: 不要な @ts-expect-error コメントを削除
+           errorMessage = event.error.message;
+        }
+        setMapError(`録画エラー: ${errorMessage}`);
+        setIsRecording(false);
+        stream.getTracks().forEach((track: MediaStreamTrack) => track.stop());
+      };
+
+      mediaRecorderRef.current.start();
+      setIsRecording(true);
+      setMapError(null);
+      console.log("Recording started with options:", options);
+
+    } catch (err) {
+      console.error('録画の開始に失敗しました:', err);
+      setMapError(`録画の開始に失敗しました: ${err instanceof Error ? err.message : String(err)}`);
+      setIsRecording(false);
+    }
+  }, [isPlaying]);
 
 
   return (
@@ -351,11 +448,9 @@ export default function HomePage() {
           />
         </div>
         <div className="flex-1 flex flex-col gap-2 md:gap-4">
-           {/* ★ 修正: ピン刺しモード中のメッセージ表示 */}
            {pickingLocationId !== null && (
                 <div className="p-3 bg-blue-100 border border-blue-400 text-blue-700 rounded-md shadow-sm relative" role="status">
                     <strong className="font-bold">地点選択モード: </strong>
-                    {/* ★ 修正: getPickingLocationLabel を使用してラベルを表示 */}
                     <span className="block sm:inline">{`地図上で「${getPickingLocationLabel(pickingLocationId, locations)}」を選択してください。`}</span>
                      <button
                         onClick={handleCancelPicking}
@@ -366,7 +461,6 @@ export default function HomePage() {
                     </button>
                 </div>
             )}
-          {/* mapError があり、かつピン刺しモードでない場合にエラー表示 */}
           {mapError && !pickingLocationId && (
             <div className="p-3 bg-red-100 border border-red-400 text-red-700 rounded-md shadow-sm relative" role="alert">
               <strong className="font-bold">情報: </strong>
@@ -399,14 +493,12 @@ export default function HomePage() {
             onStop={handleStopAnimation}
             durationSeconds={segmentDurationSeconds}
             onDurationChange={handleDurationChange}
+            isRecording={isRecording}
+            onStartRecording={startRecording}
+            onStopRecording={stopRecording}
           />
         </div>
       </div>
-      {/*
-      <div className="p-2 md:p-4">
-        <PreviewOutput />
-      </div>
-      */}
     </div>
   );
 }
