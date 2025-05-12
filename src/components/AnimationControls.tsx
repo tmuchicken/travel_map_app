@@ -54,6 +54,7 @@ const AnimationControls: React.FC<AnimationControlsProps> = ({
     <div className="bg-slate-200 dark:bg-slate-700 p-3 rounded-md shadow-lg h-auto flex flex-col justify-center">
       <h3 className="text-md font-semibold mb-2 text-center text-slate-700 dark:text-slate-200">アニメーション操作</h3>
       <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+        {/* 再生・停止・速度調整 */}
         <div className="flex items-center space-x-2">
           <button
             onClick={onPlayPause}
@@ -87,6 +88,7 @@ const AnimationControls: React.FC<AnimationControlsProps> = ({
             />
           </div>
         </div>
+        {/* 出力関連ボタン */}
         <div className="flex items-center space-x-1 flex-wrap justify-center gap-1 mt-2 sm:mt-0">
           <button
             onClick={isRecording ? onStopRecording : onStartRecording}
@@ -96,7 +98,7 @@ const AnimationControls: React.FC<AnimationControlsProps> = ({
                 : 'bg-blue-600 hover:bg-blue-700'
             } disabled:opacity-50 disabled:cursor-not-allowed`}
             title={isRecording ? "録画停止" : "録画開始"}
-            disabled={isRecording}
+            disabled={isRecording} // 録画中は「録画停止」のみ有効、録画中でなければ「録画開始」が有効
           >
             {isRecording ? (
               <>

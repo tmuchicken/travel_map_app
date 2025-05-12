@@ -381,7 +381,7 @@ export default function HomePage() {
       targetCanvas.width = mapElement.clientWidth;
       targetCanvas.height = mapElement.clientHeight;
 
-      const stream = targetCanvas.captureStream(30);
+      const stream = targetCanvas.captureStream(30); // 30fpsでキャプチャ
 
       const options = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
                       ? { mimeType: 'video/webm;codecs=vp9', videoBitsPerSecond: 2500000 }
@@ -439,17 +439,19 @@ export default function HomePage() {
         stream.getTracks().forEach((track: MediaStreamTrack) => track.stop());
       };
 
-      if (!isPlaying) {
+      if (!isPlaying) { // アニメーションが再生中でなければ再生開始
           setIsPlaying(true);
-          setCurrentSegmentIndex(0);
+          setCurrentSegmentIndex(0); // 冒頭から再生
       }
 
-      mediaRecorderRef.current.start();
+      mediaRecorderRef.current.start(); // 録画開始
       setIsRecording(true);
-      setMapError(null);
+      setMapError(null); // エラーをクリア
       console.log("Recording started with options:", options);
 
+      // html2canvasで定期的に地図をキャプチャしてcanvasに描画するループを開始
       const drawMapToCanvas = async () => {
+        // 録画中でない、または必要な参照がない場合はループを停止
         if (!isRecording || !mediaRecorderRef.current || mediaRecorderRef.current.state !== 'recording' || !mapElement || !targetCanvas) {
           if (animationFrameIdForRecordingRef.current) {
             cancelAnimationFrame(animationFrameIdForRecordingRef.current);
@@ -458,28 +460,29 @@ export default function HomePage() {
           return;
         }
         try {
+          // mapElementからcanvasを生成
           const canvas = await html2canvas(mapElement, {
-            useCORS: true,
-            logging: false,
-            width: mapElement.clientWidth,
-            height: mapElement.clientHeight,
-            // ★ 修正: 不要なオプションを削除
-            // x: 0,
-            // y: 0,
-            // scrollX: 0,
-            // scrollY: 0,
+            useCORS: true, // クロスオリジンリソースの読み込みを許可
+            logging: false, // html2canvasのログ出力を無効化
+            width: mapElement.clientWidth, // キャプチャ幅
+            height: mapElement.clientHeight, // キャプチャ高さ
           });
+          // 録画用canvasのコンテキストを取得
           const ctx = targetCanvas.getContext('2d');
           if (ctx) {
-            ctx.clearRect(0, 0, targetCanvas.width, targetCanvas.height);
-            ctx.drawImage(canvas, 0, 0);
+            ctx.clearRect(0, 0, targetCanvas.width, targetCanvas.height); // 前のフレームをクリア
+            ctx.drawImage(canvas, 0, 0); // 新しいフレームを描画
           }
         } catch (captureError) {
           console.error("Error capturing map with html2canvas:", captureError);
+          // キャプチャエラー時の処理 (例: 録画停止)
+          // stopRecording();
+          // setMapError("地図のキャプチャに失敗しました。録画を停止します。");
         }
+        // 次のフレームで再度描画
         animationFrameIdForRecordingRef.current = requestAnimationFrame(drawMapToCanvas);
       };
-      drawMapToCanvas();
+      drawMapToCanvas(); // 最初のフレームを描画開始
 
     } catch (err) {
       console.error('録画の開始に失敗しました:', err);
@@ -490,7 +493,7 @@ export default function HomePage() {
         animationFrameIdForRecordingRef.current = null;
       }
     }
-  }, [isPlaying, locations]);
+  }, [isPlaying, locations]); // isPlaying, locations を依存配列に追加
 
 
   return (
