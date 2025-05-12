@@ -128,7 +128,6 @@ export default function HomePage() {
     }
   }, []);
 
-  // ★ 修正: 逆ジオコーディングのハンドラ
   const handleReverseGeocodeLocation = useCallback(async (locationId: string, latlng: L.LatLng) => {
     setGeocodingState(prev => ({...prev, [locationId]: 'loading'}));
     setMapError(null); // 逆ジオコーディング開始時にエラーをクリア
@@ -138,7 +137,6 @@ export default function HomePage() {
       if (!response.ok) throw new Error(`逆ジオコーディングサーバーエラー: ${response.statusText} (${response.status})`);
       const data = await response.json();
       if (data && data.display_name) {
-        // 地名が見つかった場合
         const display_name = data.display_name;
         setLocations(prevLocations =>
           prevLocations.map(loc =>
@@ -147,23 +145,20 @@ export default function HomePage() {
         );
         setGeocodingState(prev => ({...prev, [locationId]: 'idle'}));
       } else {
-        // ★ 修正: 地名が見つからない場合、エラーメッセージを設定せず、座標とデフォルト名のみ更新
         setLocations(prevLocations =>
           prevLocations.map(loc =>
-            loc.id === locationId ? { ...loc, lat: latlng.lat, lng: latlng.lng, name: `地点 (${latlng.lat.toFixed(4)}, ${latlng.lng.toFixed(4)})`, error: undefined } : loc // error: undefined に変更
+            loc.id === locationId ? { ...loc, lat: latlng.lat, lng: latlng.lng, name: `地点 (${latlng.lat.toFixed(4)}, ${latlng.lng.toFixed(4)})`, error: undefined } : loc
           )
         );
-         setGeocodingState(prev => ({...prev, [locationId]: 'idle'})); // ローディングは終了
+         setGeocodingState(prev => ({...prev, [locationId]: 'idle'}));
       }
     } catch (error) {
-      // ★ 修正: ネットワークエラーなどの場合のみエラーメッセージを設定
       const errorMessage = error instanceof Error ? error.message : '逆ジオコーディング中に不明なエラーが発生しました。';
        setLocations(prevLocations =>
           prevLocations.map(loc => (loc.id === locationId ? { ...loc, lat: latlng.lat, lng: latlng.lng, name: `地点 (${latlng.lat.toFixed(4)}, ${latlng.lng.toFixed(4)})`, error: `逆ジオコーディングエラー: ${errorMessage}` } : loc))
         );
       setGeocodingState(prev => ({...prev, [locationId]: 'error'}));
     } finally {
-        // 逆ジオコーディングが完了したらピン刺しモードを終了
         setPickingLocationId(null);
     }
   }, []);
@@ -279,27 +274,23 @@ export default function HomePage() {
   }, [locations]);
 
   const handleMapRoutingError = useCallback((message: string) => {
-    // ピン刺しモード中のメッセージは上書きしない
     if (!pickingLocationId) {
         setMapError(message);
     }
   }, [pickingLocationId]);
 
-  // ★ 修正: ピン刺しモード開始時のハンドラ
   const handleSelectLocationFromMap = useCallback((locationId: string) => {
     if (isPlaying) {
         setMapError("アニメーション再生中は地点を選択できません。アニメーションを停止してください。");
         return;
     }
     if (pickingLocationId !== null) {
-         setMapError(`現在、別の地点 (${locations.find(loc => loc.id === pickingLocationId)?.name || pickingLocationId}) を選択中です。まずそちらを完了またはキャンセルしてください。`);
+         setMapError(`現在、別の地点 (${getPickingLocationLabel(pickingLocationId, locations)}) を選択中です。まずそちらを完了またはキャンセルしてください。`);
         return;
     }
     setPickingLocationId(locationId);
-    // ★ 修正: 赤い情報ポップアップを表示しないように変更
-    // setMapError(`地図上で「${locations.find(loc => loc.id === locationId)?.name || locationId}」の地点をクリックしてください。`);
     setMapError(null); // 既存のエラーをクリア
-  }, [isPlaying, pickingLocationId, locations]);
+  }, [isPlaying, pickingLocationId, locations]); // locations を依存配列に追加
 
   const handleMapClickForPicking = useCallback((latlng: L.LatLng) => {
     if (pickingLocationId !== null) {
@@ -309,15 +300,33 @@ export default function HomePage() {
 
   const handleCancelPicking = useCallback(() => {
     setPickingLocationId(null);
-    setMapError(null); // エラーメッセージをクリア
+    setMapError(null);
     setGeocodingState(prev => {
         const newState = {...prev};
-        if (pickingLocationId && newState[pickingLocationId] === 'loading') {
-             newState[pickingLocationId] = 'idle';
+        // ★ pickingLocationId が null になる前に参照する必要があるため、
+        //    キャンセル処理の最初に pickingLocationId の値を変数に保持
+        const cancelledPickingId = pickingLocationId;
+        if (cancelledPickingId && newState[cancelledPickingId] === 'loading') {
+             newState[cancelledPickingId] = 'idle';
         }
         return newState;
     });
-  }, [pickingLocationId]);
+  }, [pickingLocationId]); // pickingLocationId を依存配列に追加
+
+
+  // ★ 追加: ピン刺し中の地点ラベルを取得するヘルパー関数
+  const getPickingLocationLabel = (id: string | null, locs: LocationPoint[]): string => {
+    if (!id) return '';
+    if (id === 'start') return '出発地';
+    if (id === 'end') return '目的地';
+    if (id.startsWith('waypoint')) {
+      const index = locs.findIndex(loc => loc.id === id);
+      // 出発地を除いたインデックスを計算 (出発地が0番目なので)
+      const waypointIndex = index > 0 ? index : '?'; // 見つからない場合は '?'
+      return `中継地点 ${waypointIndex}`;
+    }
+    return id; // フォールバック
+  };
 
 
   return (
@@ -342,11 +351,12 @@ export default function HomePage() {
           />
         </div>
         <div className="flex-1 flex flex-col gap-2 md:gap-4">
-           {/* ピン刺しモード中の青いメッセージ表示 */}
+           {/* ★ 修正: ピン刺しモード中のメッセージ表示 */}
            {pickingLocationId !== null && (
                 <div className="p-3 bg-blue-100 border border-blue-400 text-blue-700 rounded-md shadow-sm relative" role="status">
                     <strong className="font-bold">地点選択モード: </strong>
-                    <span className="block sm:inline">{`地図上で「${locations.find(loc => loc.id === pickingLocationId)?.name || pickingLocationId}」を選択してください。`}</span>
+                    {/* ★ 修正: getPickingLocationLabel を使用してラベルを表示 */}
+                    <span className="block sm:inline">{`地図上で「${getPickingLocationLabel(pickingLocationId, locations)}」を選択してください。`}</span>
                      <button
                         onClick={handleCancelPicking}
                         className="absolute top-0 bottom-0 right-0 px-3 py-2 text-blue-500 hover:text-blue-700"
