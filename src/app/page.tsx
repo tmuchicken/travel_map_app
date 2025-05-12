@@ -8,6 +8,7 @@ import ControlPanel from '@/components/ControlPanel';
 import AnimationControls from '@/components/AnimationControls';
 import L from 'leaflet';
 import { saveAs } from 'file-saver';
+import html2canvas from 'html2canvas';
 
 export interface LocationPoint {
   id: string;
@@ -53,6 +54,8 @@ export default function HomePage() {
   const [isRecording, setIsRecording] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
+  const animationFrameIdForRecordingRef = useRef<number | null>(null);
+  const canvasForRecordingRef = useRef<HTMLCanvasElement | null>(null);
 
   useEffect(() => {
     setIsPlaying(false);
@@ -227,6 +230,16 @@ export default function HomePage() {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
       mediaRecorderRef.current.stop();
     }
+    if (animationFrameIdForRecordingRef.current) {
+      cancelAnimationFrame(animationFrameIdForRecordingRef.current);
+      animationFrameIdForRecordingRef.current = null;
+    }
+    if (canvasForRecordingRef.current) {
+        const ctx = canvasForRecordingRef.current.getContext('2d');
+        if (ctx) {
+            ctx.clearRect(0, 0, canvasForRecordingRef.current.width, canvasForRecordingRef.current.height);
+        }
+    }
     setIsRecording(false);
     console.log("Stop recording requested.");
   }, []);
@@ -343,15 +356,10 @@ export default function HomePage() {
     });
   }, [pickingLocationId]);
 
-
   const startRecording = useCallback(async () => {
     if (!window.MediaRecorder) {
       setMapError('お使いのブラウザは録画機能に対応していません。');
       return;
-    }
-    if (!isPlaying) {
-        setMapError('アニメーションを再生してから録画を開始してください。');
-        return;
     }
 
     const mapElement = document.getElementById('map-container');
@@ -359,10 +367,21 @@ export default function HomePage() {
       setMapError('地図要素が見つかりません。録画を開始できません。');
       return;
     }
+    const validLocations = locations.filter(loc => loc.lat !== undefined && loc.lng !== undefined);
+    if (validLocations.length < 2) {
+      setMapError("録画を開始するには、まず有効な経路を生成してください。");
+      return;
+    }
 
     try {
-      // @ts-expect-error Experimental API
-      const stream: MediaStream = await mapElement.captureStream(30);
+      if (!canvasForRecordingRef.current) {
+        canvasForRecordingRef.current = document.createElement('canvas');
+      }
+      const targetCanvas = canvasForRecordingRef.current;
+      targetCanvas.width = mapElement.clientWidth;
+      targetCanvas.height = mapElement.clientHeight;
+
+      const stream = targetCanvas.captureStream(30);
 
       const options = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
                       ? { mimeType: 'video/webm;codecs=vp9', videoBitsPerSecond: 2500000 }
@@ -380,6 +399,10 @@ export default function HomePage() {
       };
 
       mediaRecorderRef.current.onstop = () => {
+        if (animationFrameIdForRecordingRef.current) {
+          cancelAnimationFrame(animationFrameIdForRecordingRef.current);
+          animationFrameIdForRecordingRef.current = null;
+        }
         if (recordedChunksRef.current.length === 0) {
           setMapError("録画データが空です。");
           stream.getTracks().forEach((track: MediaStreamTrack) => track.stop());
@@ -401,11 +424,14 @@ export default function HomePage() {
 
       mediaRecorderRef.current.onerror = (event: Event) => {
         console.error("MediaRecorder error:", event);
+        if (animationFrameIdForRecordingRef.current) {
+            cancelAnimationFrame(animationFrameIdForRecordingRef.current);
+            animationFrameIdForRecordingRef.current = null;
+        }
         let errorMessage = '録画中に不明なエラーが発生しました。';
         if (event instanceof DOMException) {
           errorMessage = event.message;
         } else if ('error' in event && event.error instanceof Error) {
-          // ★ 修正: 不要な @ts-expect-error コメントを削除
            errorMessage = event.error.message;
         }
         setMapError(`録画エラー: ${errorMessage}`);
@@ -413,17 +439,58 @@ export default function HomePage() {
         stream.getTracks().forEach((track: MediaStreamTrack) => track.stop());
       };
 
+      if (!isPlaying) {
+          setIsPlaying(true);
+          setCurrentSegmentIndex(0);
+      }
+
       mediaRecorderRef.current.start();
       setIsRecording(true);
       setMapError(null);
       console.log("Recording started with options:", options);
 
+      const drawMapToCanvas = async () => {
+        if (!isRecording || !mediaRecorderRef.current || mediaRecorderRef.current.state !== 'recording' || !mapElement || !targetCanvas) {
+          if (animationFrameIdForRecordingRef.current) {
+            cancelAnimationFrame(animationFrameIdForRecordingRef.current);
+            animationFrameIdForRecordingRef.current = null;
+          }
+          return;
+        }
+        try {
+          const canvas = await html2canvas(mapElement, {
+            useCORS: true,
+            logging: false,
+            width: mapElement.clientWidth,
+            height: mapElement.clientHeight,
+            // ★ 修正: 不要なオプションを削除
+            // x: 0,
+            // y: 0,
+            // scrollX: 0,
+            // scrollY: 0,
+          });
+          const ctx = targetCanvas.getContext('2d');
+          if (ctx) {
+            ctx.clearRect(0, 0, targetCanvas.width, targetCanvas.height);
+            ctx.drawImage(canvas, 0, 0);
+          }
+        } catch (captureError) {
+          console.error("Error capturing map with html2canvas:", captureError);
+        }
+        animationFrameIdForRecordingRef.current = requestAnimationFrame(drawMapToCanvas);
+      };
+      drawMapToCanvas();
+
     } catch (err) {
       console.error('録画の開始に失敗しました:', err);
       setMapError(`録画の開始に失敗しました: ${err instanceof Error ? err.message : String(err)}`);
       setIsRecording(false);
+      if (animationFrameIdForRecordingRef.current) {
+        cancelAnimationFrame(animationFrameIdForRecordingRef.current);
+        animationFrameIdForRecordingRef.current = null;
+      }
     }
-  }, [isPlaying]);
+  }, [isPlaying, locations]);
 
 
   return (
