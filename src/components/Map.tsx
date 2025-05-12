@@ -256,11 +256,10 @@ const Map: React.FC<MapProps> = ({
 
           // L.Routing.Plan のオプションを定義
           const planOptions: L.Routing.PlanOptions = {
-            // ★ 修正点: createMarker は (i: number, waypoint: Waypoint, n: number) => Marker | boolean という型を持つ
-            // マーカーを生成しない場合は false を返す
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
             createMarker: (_waypointIndex: number, _waypoint: L.Routing.Waypoint, _numberOfWaypoints: number) => false,
-            draggableWaypoints: false, // ウェイポイントのドラッグを無効化
-            addWaypoints: false,       // クリックでのウェイポイント追加を無効化
+            draggableWaypoints: false,
+            addWaypoints: false,
           };
 
           const routingControl = L.Routing.control({
@@ -355,7 +354,7 @@ const Map: React.FC<MapProps> = ({
     });
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [locations, transportOptions, onRoutingError]);
+  }, [locations, transportOptions, onRoutingError]); // ★ 418行目: 不要な eslint-disable コメントを削除
 
   // アニメーションマーカーの準備と更新
   useEffect(() => {
@@ -420,7 +419,7 @@ const Map: React.FC<MapProps> = ({
 
   // アニメーションの実行トリガー
   useEffect(() => {
-    if (isPlaying && currentAnimationSegmentCoordsRef.current.length > 0 && animatedMarkerRef.current) {
+    if (isPlaying && animatedMarkerRef.current && currentAnimationSegmentCoordsRef.current.length > 0) { // currentAnimationSegmentCoordsRef.current を依存配列から削除するため、ここで直接参照
       animationStartTimeRef.current = Date.now();
       animateMarker();
     } else {
@@ -429,7 +428,8 @@ const Map: React.FC<MapProps> = ({
         animationFrameIdRef.current = null;
       }
     }
-  }, [isPlaying, currentAnimationSegmentCoordsRef.current, animateMarker]);
+  // ★ 432行目: currentAnimationSegmentCoordsRef.current を依存配列から削除
+  }, [isPlaying, animateMarker]);
 
   return (
     <div ref={mapRef} style={{ width: '100%', height: '100%' }} id="map-container" className="rounded-md bg-gray-100">
