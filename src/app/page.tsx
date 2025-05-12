@@ -7,8 +7,8 @@ import Header from '@/components/Header';
 import ControlPanel from '@/components/ControlPanel';
 import AnimationControls from '@/components/AnimationControls';
 import L from 'leaflet';
-// import { saveAs } from 'file-saver'; // 録画機能以外で使わない場合は削除
-// import html2canvas from 'html2canvas'; // 録画機能以外で使わない場合は削除
+// ★ TileLayerData と availableTileLayers を新しいファイルからインポート
+import { availableTileLayers } from '@/config/mapLayers';
 
 export interface LocationPoint {
   id: string;
@@ -24,6 +24,8 @@ export interface TransportOption {
   label: string;
 }
 
+// TileLayerData と availableTileLayers の定義は上記でインポートしたため削除
+
 const MapWithNoSSR = dynamic(() => import('@/components/Map'), {
   ssr: false,
   loading: () => <div className="flex justify-center items-center h-full bg-gray-200 dark:bg-gray-700"><p className="text-slate-700 dark:text-slate-200">地図を読み込み中です...</p></div>,
@@ -31,6 +33,7 @@ const MapWithNoSSR = dynamic(() => import('@/components/Map'), {
 
 // --- HomePage Component ---
 export default function HomePage() {
+  // ... (その他のコードは変更なし、availableTileLayers はインポートされたものを使用)
   const initialTransportOptions: TransportOption[] = useMemo(() => [
     { name: 'Car', label: '🚗' },
     { name: 'Bus', label: '🚌' },
@@ -51,23 +54,14 @@ export default function HomePage() {
   const [segmentDurationSeconds, setSegmentDurationSeconds] = useState(5);
   const [mapError, setMapError] = useState<string | null>(null);
   const [pickingLocationId, setPickingLocationId] = useState<string | null>(null);
+  const [selectedTileLayerId, setSelectedTileLayerId] = useState<string>(availableTileLayers[0].id);
 
-  // 録画関連の State を削除
-  // const [isRecording, setIsRecording] = useState(false);
-  // const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  // const recordedChunksRef = useRef<Blob[]>([]);
-  // const animationFrameIdForRecordingRef = useRef<number | null>(null);
-  // const canvasForRecordingRef = useRef<HTMLCanvasElement | null>(null);
-  // const streamRef = useRef<MediaStream | null>(null);
-  // const lastFrameTimeRef = useRef<number>(0);
-  // const frameCaptureInterval = 100;
 
   useEffect(() => {
     setIsPlaying(false);
     setCurrentSegmentIndex(0);
   }, [locations]);
 
-  // --- Location and Transport Handlers ---
   const handleLocationNameChange = useCallback((id: string, newName: string) => {
     setLocations(prevLocations =>
       prevLocations.map(loc => (loc.id === id ? { ...loc, name: newName, lat: undefined, lng: undefined, error: undefined } : loc))
@@ -192,7 +186,7 @@ export default function HomePage() {
         return;
     }
     try {
-      const projectData = JSON.stringify({ locations, segmentDurationSeconds });
+      const projectData = JSON.stringify({ locations, segmentDurationSeconds, selectedTileLayerId });
       localStorage.setItem('travelRouteProject', projectData);
       alert("プロジェクトを保存しました。");
     } catch (error) {
@@ -200,7 +194,7 @@ export default function HomePage() {
       alert("プロジェクトの保存に失敗しました。");
       setMapError("プロジェクトの保存に失敗しました。");
     }
-  }, [locations, segmentDurationSeconds, pickingLocationId]);
+  }, [locations, segmentDurationSeconds, pickingLocationId, selectedTileLayerId]);
 
   const handleLoadProject = useCallback(() => {
     if (pickingLocationId !== null) {
@@ -218,6 +212,11 @@ export default function HomePage() {
         } else {
             setSegmentDurationSeconds(5);
         }
+        if (projectData.selectedTileLayerId && availableTileLayers.find(layer => layer.id === projectData.selectedTileLayerId)) {
+          setSelectedTileLayerId(projectData.selectedTileLayerId);
+        } else {
+          setSelectedTileLayerId(availableTileLayers[0].id);
+        }
         alert("プロジェクトを読み込みました。");
         setIsPlaying(false);
         setCurrentSegmentIndex(0);
@@ -232,22 +231,14 @@ export default function HomePage() {
     }
   }, [pickingLocationId]);
 
-  // --- Recording Handlers ---
-  // drawMapToCanvas, startRecording, stopRecording 関数を削除
-
-  // --- Animation Handlers ---
   const handleStopAnimation = useCallback(() => {
      if (pickingLocationId !== null) {
         setMapError("地点選択モード中はアニメーションを操作できません。地点を選択するかキャンセルしてください。");
         return;
     }
-    // if (isRecording) { // 削除
-    //   stopRecording(); // 削除
-    // } // 削除
     setIsPlaying(false);
     setCurrentSegmentIndex(0);
     setMapError(null);
-  // }, [pickingLocationId, isRecording, stopRecording]); // 依存配列から isRecording, stopRecording を削除
   }, [pickingLocationId]);
 
   const handlePlayPauseToggle = useCallback(() => {
@@ -255,10 +246,6 @@ export default function HomePage() {
         setMapError("地点選択モード中はアニメーションを操作できません。地点を選択するかキャンセルしてください。");
         return;
     }
-    // if (isRecording) { // 削除
-    //     setMapError("録画中は再生/一時停止できません。"); // 削除
-    //     return; // 削除
-    // } // 削除
     const validLocations = locations.filter(loc => loc.lat !== undefined && loc.lng !== undefined);
     if (validLocations.length < 2 && !isPlaying) {
         setMapError("アニメーションを開始するには、まず有効な経路を生成してください。");
@@ -272,7 +259,6 @@ export default function HomePage() {
       }
       return newIsPlaying;
     });
-  // }, [isPlaying, locations, currentSegmentIndex, pickingLocationId, isRecording]); // 依存配列から isRecording を削除
   }, [isPlaying, locations, currentSegmentIndex, pickingLocationId]);
 
   const handleDurationChange = useCallback((newDuration: number) => {
@@ -280,13 +266,8 @@ export default function HomePage() {
         setMapError("地点選択モード中はアニメーション速度を変更できません。地点を選択するかキャンセルしてください。");
         return;
     }
-    // if (isRecording) { // 削除
-    //     setMapError("録画中はアニメーション速度を変更できません。"); // 削除
-    //     return; // 削除
-    // } // 削除
     const validatedDuration = Math.max(1, Math.min(600, Math.round(newDuration)));
     setSegmentDurationSeconds(validatedDuration);
-  // }, [pickingLocationId, isRecording]); // 依存配列から isRecording を削除
   }, [pickingLocationId]);
 
    const handleSegmentComplete = useCallback(() => {
@@ -295,14 +276,10 @@ export default function HomePage() {
       const validLocationsCount = locations.filter(loc => loc.lat !== undefined && loc.lng !== undefined).length;
       if (nextIndex >= validLocationsCount - 1) {
         setIsPlaying(false);
-        // if (isRecording) { // 削除
-        //     stopRecording(); // 削除
-        // } // 削除
         return 0;
       }
       return nextIndex;
     });
-  // }, [locations, isRecording, stopRecording]); // 依存配列から isRecording, stopRecording を削除
   }, [locations]);
 
   const handleMapRoutingError = useCallback((message: string) => {
@@ -334,10 +311,6 @@ export default function HomePage() {
         setMapError("アニメーション再生中は地点を選択できません。アニメーションを停止してください。");
         return;
     }
-    // if (isRecording) { // 削除
-    //     setMapError("録画中は地点を選択できません。録画を停止してください。"); // 削除
-    //     return; // 削除
-    // } // 削除
     if (pickingLocationId !== null && pickingLocationId !== locationId) {
          setMapError(`現在、別の地点 (${getPickingLocationLabel(pickingLocationId, locations)}) を選択中です。まずそちらを完了またはキャンセルしてください。`);
         return;
@@ -349,7 +322,6 @@ export default function HomePage() {
         setPickingLocationId(locationId);
         setMapError(null);
     }
-  // }, [isPlaying, isRecording, pickingLocationId, locations, getPickingLocationLabel]); // 依存配列から isRecording を削除
   }, [isPlaying, pickingLocationId, locations, getPickingLocationLabel]);
 
 
@@ -371,11 +343,18 @@ export default function HomePage() {
     }
   }, [pickingLocationId, geocodingState]);
 
+  const handleTileLayerChange = useCallback((newTileLayerId: string) => {
+    setSelectedTileLayerId(newTileLayerId);
+  }, []);
 
-  // --- UI Rendering ---
+
   return (
     <div className="flex flex-col min-h-screen bg-slate-100 dark:bg-slate-900 antialiased">
-      <Header />
+      <Header
+        availableTileLayers={availableTileLayers}
+        selectedTileLayerId={selectedTileLayerId}
+        onTileLayerChange={handleTileLayerChange}
+      />
       <div className="flex flex-col md:flex-row flex-1 p-2 md:p-4 gap-2 md:gap-4">
         <div className="w-full md:w-[380px] lg:w-[420px] flex-shrink-0">
           <ControlPanel
@@ -433,6 +412,7 @@ export default function HomePage() {
               onRoutingError={handleMapRoutingError}
               isPickingLocation={pickingLocationId !== null}
               onMapClickForPicking={handleMapClickForPicking}
+              selectedTileLayer={availableTileLayers.find(layer => layer.id === selectedTileLayerId) || availableTileLayers[0]}
             />
           </main>
           <AnimationControls
@@ -441,7 +421,6 @@ export default function HomePage() {
             onStop={handleStopAnimation}
             durationSeconds={segmentDurationSeconds}
             onDurationChange={handleDurationChange}
-            // isRecording, onStartRecording, onStopRecording props を削除
           />
         </div>
       </div>

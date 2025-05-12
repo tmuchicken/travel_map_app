@@ -4,11 +4,14 @@ import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import 'leaflet-routing-machine/dist/leaflet-routing-machine.css';
 import 'leaflet-routing-machine';
-import type { LocationPoint, TransportOption } from '@/app/page';
+// ★ TileLayerData を新しいファイルからインポート
+import type { LocationPoint, TransportOption } from '@/app/page'; // LocationPoint, TransportOption は page.tsx からのままでOK
+import type { TileLayerData } from '@/config/mapLayers'; // TileLayerData は mapLayers.ts から
 
-// LeafletのデフォルトアイコンURL解決のための修正 (Next.js環境での問題回避)
+// ... (以降のコードは前回提示した省略なしの Map.tsx と同じ)
+// LeafletのデフォルトアイコンURL解決のための修正
 if (typeof window !== 'undefined') {
-  // @ts-expect-error: LeafletのデフォルトアイコンURL解決はNext.js/webpack環境で問題を起こすことがあるため
+  // @ts-expect-error: Leaflet
   delete L.Icon.Default.prototype._getIconUrl;
   L.Icon.Default.mergeOptions({
     iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
@@ -28,7 +31,6 @@ const createAnimatedIcon = (transportLabel: string) => {
 };
 
 // シンプルなベジェ曲線の座標を生成する関数
-// 始点、終点、制御点から曲線を構成する点の配列を生成
 const getBezierCurveCoordinates = (start: L.LatLng, end: L.LatLng, control: L.LatLng, numPoints: number = 50): L.LatLng[] => {
     const points: L.LatLng[] = [];
     for (let i = 0; i <= numPoints; i++) {
@@ -46,16 +48,13 @@ const calculateControlPoint = (start: L.LatLng, end: L.LatLng): L.LatLng => {
     const midLat = (start.lat + end.lat) / 2;
     const midLng = (start.lng + end.lng) / 2;
 
-    // 始点から終点へのベクトル
     const dx = end.lng - start.lng;
     const dy = end.lat - start.lat;
 
-    // ベクトルに垂直な方向 (90度回転)
     const perpendicularDx = -dy;
     const perpendicularDy = dx;
 
-    // オフセットの距離 (適当な調整係数)
-    const offsetFactor = 0.2; // この値を調整して曲線の膨らみ具合を変える
+    const offsetFactor = 0.2;
 
     const controlLat = midLat + perpendicularDy * offsetFactor;
     const controlLng = midLng + perpendicularDx * offsetFactor;
@@ -71,16 +70,17 @@ interface MapProps {
   transportOptions: TransportOption[];
   isPlaying: boolean;
   currentSegmentIndex: number;
-  segmentDurationSeconds: number; // 各区間の移動時間 (秒)
+  segmentDurationSeconds: number;
   onSegmentComplete: () => void;
   onRoutingError: (message: string) => void;
   isPickingLocation: boolean;
   onMapClickForPicking: (latlng: L.LatLng) => void;
+  selectedTileLayer: TileLayerData;
 }
 
 const Map: React.FC<MapProps> = ({
-  center = [35.6809591, 139.7673068], // Default center (e.g., Tokyo Station)
-  zoom = 6, // Default zoom level
+  center = [35.6809591, 139.7673068],
+  zoom = 6,
   locations,
   transportOptions,
   isPlaying,
@@ -90,6 +90,7 @@ const Map: React.FC<MapProps> = ({
   onRoutingError,
   isPickingLocation,
   onMapClickForPicking,
+  selectedTileLayer,
 }) => {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
@@ -104,6 +105,7 @@ const Map: React.FC<MapProps> = ({
   const routeCalculationGenerationRef = useRef(0);
   const activeRoutingControls = useRef<L.Routing.Control[]>([]);
   const [osrmWarningDisplayed, setOsrmWarningDisplayed] = useState(false);
+  const currentTileLayerRef = useRef<L.TileLayer | null>(null);
 
   const animateMarker = useCallback(() => {
     if (!animatedMarkerRef.current || currentAnimationSegmentCoordsRef.current.length < 2 || !mapInstanceRef.current || !animationStartTimeRef.current) {
@@ -154,54 +156,43 @@ const Map: React.FC<MapProps> = ({
   useEffect(() => {
     if (mapRef.current && !mapInstanceRef.current) {
       mapInstanceRef.current = L.map(mapRef.current, { zoomControl: true }).setView(center, zoom);
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 19,
-        attribution: '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-      }).addTo(mapInstanceRef.current);
-
       if (!osrmWarningDisplayed) {
         onRoutingError("現在、経路検索にOSRMのデモサーバーを使用しています。このサーバーは本番環境での利用には適しておらず、不安定な場合があります。安定した運用のためには、ご自身でOSRMサーバーを構築するか、商用の経路検索サービスをご利用ください。");
         setOsrmWarningDisplayed(true);
       }
     }
-
     return () => {
       if (animationFrameIdRef.current) {
         cancelAnimationFrame(animationFrameIdRef.current);
         animationFrameIdRef.current = null;
       }
       if (mapInstanceRef.current) {
-        // Cleanup active routing controls
         activeRoutingControls.current.forEach(control => {
           if (mapInstanceRef.current) {
             try { mapInstanceRef.current.removeControl(control); } catch (e) { console.warn("Error removing active routing control during cleanup:", e); }
           }
         });
         activeRoutingControls.current = [];
-
-        // Cleanup layers
         layerRefs.current.forEach(layer => {
           if (mapInstanceRef.current && mapInstanceRef.current.hasLayer(layer)) {
             try { mapInstanceRef.current.removeLayer(layer); } catch (e) { console.warn("Error removing layer during cleanup:", e); }
           }
         });
         layerRefs.current = [];
-
-        // Cleanup markers
         markerRefs.current.forEach(marker => {
           if (mapInstanceRef.current && mapInstanceRef.current.hasLayer(marker)) {
              try { mapInstanceRef.current.removeLayer(marker); } catch (e) { console.warn("Error removing marker during cleanup:", e); }
           }
         });
         markerRefs.current = [];
-
-        // Cleanup animated marker
         if (animatedMarkerRef.current && mapInstanceRef.current && mapInstanceRef.current.hasLayer(animatedMarkerRef.current)) {
           try { mapInstanceRef.current.removeLayer(animatedMarkerRef.current); } catch (e) { console.warn("Error removing animated marker during cleanup:", e); }
         }
         animatedMarkerRef.current = null;
-
-        // Remove map instance
+        if (currentTileLayerRef.current && mapInstanceRef.current.hasLayer(currentTileLayerRef.current)) {
+            try { mapInstanceRef.current.removeLayer(currentTileLayerRef.current); } catch(e) { console.warn("Error removing tile layer during cleanup:", e); }
+        }
+        currentTileLayerRef.current = null;
         try { mapInstanceRef.current.remove(); } catch (e) { console.warn("Error removing map instance during cleanup:", e); }
         mapInstanceRef.current = null;
       }
@@ -209,15 +200,30 @@ const Map: React.FC<MapProps> = ({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    if (!mapInstanceRef.current || !selectedTileLayer) {
+      return;
+    }
+    if (currentTileLayerRef.current) {
+      mapInstanceRef.current.removeLayer(currentTileLayerRef.current);
+    }
+    const newLayer = L.tileLayer(selectedTileLayer.url, {
+      attribution: selectedTileLayer.attribution,
+      maxZoom: selectedTileLayer.maxZoom,
+      subdomains: selectedTileLayer.subdomains || 'abc',
+    });
+    newLayer.on('tileerror', function(errorEvent) {
+        console.error('TileError:', errorEvent);
+        onRoutingError(`地図タイル「${selectedTileLayer.name}」の読み込みに失敗しました。別のスタイルを試すか、ネットワーク接続を確認してください。`);
+    });
+    newLayer.addTo(mapInstanceRef.current);
+    currentTileLayerRef.current = newLayer;
+  }, [selectedTileLayer, onRoutingError]);
 
-  // ★ 修正: 経路描画ロジック (locations, transportOptions 変更時)
   useEffect(() => {
     if (!mapInstanceRef.current) return;
-
     routeCalculationGenerationRef.current++;
     const currentGeneration = routeCalculationGenerationRef.current;
-
-    // --- 既存のレイヤーとマーカーの削除 (変更なし) ---
     activeRoutingControls.current.forEach(control => {
       if (mapInstanceRef.current) {
         try { mapInstanceRef.current.removeControl(control); } catch(e) { console.warn("Error removing old active routing control:", e); }
@@ -237,14 +243,9 @@ const Map: React.FC<MapProps> = ({
     });
     markerRefs.current = [];
     allSegmentsRouteCoordsRef.current = {};
-    // --- ここまで変更なし ---
-
-
     const validLocations = locations.filter(
       loc => typeof loc.lat === 'number' && typeof loc.lng === 'number' && !isNaN(loc.lat) && !isNaN(loc.lng)
     );
-
-    // --- 地点マーカーの追加 (変更なし) ---
     validLocations.forEach(loc => {
       if (mapInstanceRef.current && typeof loc.lat === 'number' && typeof loc.lng === 'number') {
         const marker = L.marker([loc.lat, loc.lng]).addTo(mapInstanceRef.current);
@@ -252,18 +253,13 @@ const Map: React.FC<MapProps> = ({
         markerRefs.current.push(marker);
       }
     });
-    // --- ここまで変更なし ---
-
     if (validLocations.length < 2) {
       return;
     }
-
     const routePromises = validLocations.map((startPoint, i) => {
       if (i >= validLocations.length - 1) return Promise.resolve();
-
       const endPoint = validLocations[i + 1];
       const transportMode = startPoint.transport;
-
       if (typeof startPoint.lat !== 'number' || typeof startPoint.lng !== 'number' ||
           typeof endPoint.lat !== 'number' || typeof endPoint.lng !== 'number' || !mapInstanceRef.current) {
         allSegmentsRouteCoordsRef.current[i] = [];
@@ -271,57 +267,41 @@ const Map: React.FC<MapProps> = ({
       }
       const startLatLng = L.latLng(startPoint.lat, startPoint.lng);
       const endLatLng = L.latLng(endPoint.lat, endPoint.lng);
-
-      // ★ 修正: 飛行機 (Plane) と船 (Ship) の両方で曲線を描画
       if (transportMode === 'Plane' || transportMode === 'Ship') {
           if (mapInstanceRef.current) {
               let polylineColor: string;
               let dashArray: string | undefined = undefined;
-
-              // 制御点を計算
               const controlPoint = calculateControlPoint(startLatLng, endLatLng);
-              // ベジェ曲線の座標を生成
               const coordsToDraw = getBezierCurveCoordinates(startLatLng, endLatLng, controlPoint);
-
               if (transportMode === 'Plane') {
-                  polylineColor = 'green'; // 飛行機の色
-                  dashArray = '5, 10'; // 飛行機の点線スタイル
-              } else { // transportMode === 'Ship'
-                  polylineColor = 'blue'; // 船の色
-                  // dashArray は undefined のまま (実線)
+                  polylineColor = 'green';
+                  dashArray = '5, 10';
+              } else {
+                  polylineColor = 'blue';
               }
-
-              // ポリライン (曲線) を地図に追加
               const polyline = L.polyline(coordsToDraw, {
                   color: polylineColor,
                   weight: 3,
                   opacity: 0.7,
                   dashArray: dashArray,
               }).addTo(mapInstanceRef.current);
-              layerRefs.current.push(polyline); // 後で削除するために参照を保存
-
-              // アニメーションのために曲線の座標を保存
+              layerRefs.current.push(polyline);
               allSegmentsRouteCoordsRef.current[i] = coordsToDraw;
           } else {
-              // マップインスタンスがない場合のフォールバック (直線)
               allSegmentsRouteCoordsRef.current[i] = [startLatLng, endLatLng];
           }
-          return Promise.resolve(); // 非同期処理ではないため即時解決
+          return Promise.resolve();
       } else {
-        // --- OSRM経路検索の部分 (変更なし) ---
         return new Promise<void>((resolveRoutePromise) => {
           if (!mapInstanceRef.current) {
             allSegmentsRouteCoordsRef.current[i] = [startLatLng, endLatLng];
             resolveRoutePromise(); return;
           }
-
           const planOptions: L.Routing.PlanOptions = {
-            // eslint-disable-next-line @typescript-eslint/no-unused-vars
-            createMarker: (_waypointIndex: number, _waypoint: L.Routing.Waypoint, _numberOfWaypoints: number) => false,
+            createMarker: () => false,
             draggableWaypoints: false,
             addWaypoints: false,
           };
-
           const routingControl = L.Routing.control({
             router: L.Routing.osrmv1({
               serviceUrl: 'https://router.project-osrm.org/route/v1',
@@ -334,7 +314,6 @@ const Map: React.FC<MapProps> = ({
             fitSelectedRoutes: false,
             lineOptions: { styles: [{ color: 'blue', opacity: 0.7, weight: 5 }], extendToWaypoints: true, missingRouteTolerance: 100 },
           });
-
           routingControl.on('routesfound', function(this: L.Routing.Control, e: L.Routing.RoutingResultEvent) {
             if (currentGeneration !== routeCalculationGenerationRef.current || !mapInstanceRef.current) {
               if (mapInstanceRef.current && activeRoutingControls.current.includes(this)) {
@@ -363,7 +342,6 @@ const Map: React.FC<MapProps> = ({
             }
             resolveRoutePromise();
           });
-
           routingControl.on('routingerror', function(this: L.Routing.Control, errEvent: L.Routing.RoutingErrorEvent) {
             if (currentGeneration !== routeCalculationGenerationRef.current || !mapInstanceRef.current) {
               if (mapInstanceRef.current && activeRoutingControls.current.includes(this)) {
@@ -384,7 +362,6 @@ const Map: React.FC<MapProps> = ({
             }
             resolveRoutePromise();
           });
-
           if (mapInstanceRef.current) {
             const addedControl = routingControl.addTo(mapInstanceRef.current);
             activeRoutingControls.current.push(addedControl);
@@ -393,14 +370,10 @@ const Map: React.FC<MapProps> = ({
             resolveRoutePromise();
           }
         });
-        // --- ここまで変更なし ---
       }
     });
-
-    // --- 地図表示範囲の調整 (変更なし) ---
     Promise.allSettled(routePromises).then(() => {
       if (currentGeneration !== routeCalculationGenerationRef.current || !mapInstanceRef.current) return;
-
       if (validLocations.length > 0) {
           const bounds = L.latLngBounds(validLocations.map(loc => L.latLng(loc.lat!, loc.lng!)));
           if (bounds.isValid() && mapInstanceRef.current) {
@@ -408,25 +381,19 @@ const Map: React.FC<MapProps> = ({
           }
       }
     });
-    // --- ここまで変更なし ---
-  }, [locations, transportOptions, onRoutingError]); // 依存配列は変更なし
+  }, [locations, transportOptions, onRoutingError]);
 
-  // --- アニメーション状態変更時のuseEffect (変更なし) ---
   useEffect(() => {
     if (!mapInstanceRef.current) return;
-
     const validLocations = locations.filter(loc => typeof loc.lat === 'number' && typeof loc.lng === 'number');
-
     if (isPlaying && currentSegmentIndex < validLocations.length - 1 && validLocations.length > 0) {
         const segmentStartPoint = validLocations[currentSegmentIndex];
         const transportOption = transportOptions.find(opt => opt.name === segmentStartPoint.transport);
         const coordsForCurrentSegment = allSegmentsRouteCoordsRef.current[currentSegmentIndex] || [];
         currentAnimationSegmentCoordsRef.current = coordsForCurrentSegment;
-
         if (transportOption && typeof segmentStartPoint.lat === 'number' && typeof segmentStartPoint.lng === 'number' &&
             coordsForCurrentSegment.length > 0 && mapInstanceRef.current) {
             const startLatLng = coordsForCurrentSegment[0];
-
             if (!animatedMarkerRef.current) {
                 animatedMarkerRef.current = L.marker(startLatLng, {
                     icon: createAnimatedIcon(transportOption.label),
@@ -436,12 +403,10 @@ const Map: React.FC<MapProps> = ({
                 animatedMarkerRef.current.setLatLng(startLatLng);
                 animatedMarkerRef.current.setIcon(createAnimatedIcon(transportOption.label));
             }
-
             const durationMs = (segmentDurationSeconds && segmentDurationSeconds > 0) ? segmentDurationSeconds * 1000 : 5000;
             currentSegmentTotalDurationRef.current = durationMs;
             animationStartTimeRef.current = Date.now();
             animateMarker();
-
         } else {
              currentAnimationSegmentCoordsRef.current = [];
              if (animatedMarkerRef.current && mapInstanceRef.current && mapInstanceRef.current.hasLayer(animatedMarkerRef.current)) {
@@ -464,9 +429,7 @@ const Map: React.FC<MapProps> = ({
         }
     }
   }, [isPlaying, currentSegmentIndex, locations, transportOptions, segmentDurationSeconds, onSegmentComplete, animateMarker]);
-  // --- ここまで変更なし ---
 
-  // --- ピン刺しモード関連のuseEffect (変更なし) ---
   useEffect(() => {
     if (!mapInstanceRef.current) return;
     const map = mapInstanceRef.current;
@@ -475,26 +438,25 @@ const Map: React.FC<MapProps> = ({
         onMapClickForPicking(e.latlng);
       }
     };
-
     if (isPickingLocation) {
       map.on('click', handleMapClick);
       map.getContainer().style.cursor = 'crosshair';
     } else {
       map.off('click', handleMapClick);
-      map.getContainer().style.cursor = '';
+      if (map.getContainer()) {
+        map.getContainer().style.cursor = '';
+      }
     }
-
     return () => {
       map.off('click', handleMapClick);
-      map.getContainer().style.cursor = '';
+      if (map.getContainer()) {
+        map.getContainer().style.cursor = '';
+      }
     };
   }, [isPickingLocation, onMapClickForPicking]);
-  // --- ここまで変更なし ---
-
 
   return (
     <div ref={mapRef} style={{ width: '100%', height: '100%' }} id="map-container" className="rounded-md bg-gray-100 dark:bg-slate-900">
-      {/* 地図はここに描画されます */}
     </div>
   );
 };
