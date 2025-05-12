@@ -173,8 +173,8 @@ const Map: React.FC<MapProps> = ({
       if (mapInstanceRef.current) {
         // Cleanup active routing controls
         activeRoutingControls.current.forEach(control => {
-          if (mapInstanceRef.current) { // Check if mapInstance is still valid
-            try { mapInstanceRef.current.removeControl(control); } catch (e) { console.warn("Error removing active routing control during cleanup:", e); } // FIX: Removed trailing 'e'
+          if (mapInstanceRef.current) {
+            try { mapInstanceRef.current.removeControl(control); } catch (e) { console.warn("Error removing active routing control during cleanup:", e); }
           }
         });
         activeRoutingControls.current = [];
@@ -182,7 +182,7 @@ const Map: React.FC<MapProps> = ({
         // Cleanup layers
         layerRefs.current.forEach(layer => {
           if (mapInstanceRef.current && mapInstanceRef.current.hasLayer(layer)) {
-            try { mapInstanceRef.current.removeLayer(layer); } catch (e) { console.warn("Error removing layer during cleanup:", e); } // FIX: Removed trailing 'e'
+            try { mapInstanceRef.current.removeLayer(layer); } catch (e) { console.warn("Error removing layer during cleanup:", e); }
           }
         });
         layerRefs.current = [];
@@ -190,7 +190,7 @@ const Map: React.FC<MapProps> = ({
         // Cleanup markers
         markerRefs.current.forEach(marker => {
           if (mapInstanceRef.current && mapInstanceRef.current.hasLayer(marker)) {
-             try { mapInstanceRef.current.removeLayer(marker); } catch (e) { console.warn("Error removing marker during cleanup:", e); } // FIX: Removed trailing 'e'
+             try { mapInstanceRef.current.removeLayer(marker); } catch (e) { console.warn("Error removing marker during cleanup:", e); }
           }
         });
         markerRefs.current = [];
@@ -202,7 +202,7 @@ const Map: React.FC<MapProps> = ({
         animatedMarkerRef.current = null;
 
         // Remove map instance
-        try { mapInstanceRef.current.remove(); } catch (e) { console.warn("Error removing map instance during cleanup:", e); } // FIX: Removed trailing 'e'
+        try { mapInstanceRef.current.remove(); } catch (e) { console.warn("Error removing map instance during cleanup:", e); }
         mapInstanceRef.current = null;
       }
     };
@@ -210,12 +210,14 @@ const Map: React.FC<MapProps> = ({
   }, []);
 
 
+  // ★ 修正: 経路描画ロジック (locations, transportOptions 変更時)
   useEffect(() => {
     if (!mapInstanceRef.current) return;
 
     routeCalculationGenerationRef.current++;
     const currentGeneration = routeCalculationGenerationRef.current;
 
+    // --- 既存のレイヤーとマーカーの削除 (変更なし) ---
     activeRoutingControls.current.forEach(control => {
       if (mapInstanceRef.current) {
         try { mapInstanceRef.current.removeControl(control); } catch(e) { console.warn("Error removing old active routing control:", e); }
@@ -235,11 +237,14 @@ const Map: React.FC<MapProps> = ({
     });
     markerRefs.current = [];
     allSegmentsRouteCoordsRef.current = {};
+    // --- ここまで変更なし ---
+
 
     const validLocations = locations.filter(
       loc => typeof loc.lat === 'number' && typeof loc.lng === 'number' && !isNaN(loc.lat) && !isNaN(loc.lng)
     );
 
+    // --- 地点マーカーの追加 (変更なし) ---
     validLocations.forEach(loc => {
       if (mapInstanceRef.current && typeof loc.lat === 'number' && typeof loc.lng === 'number') {
         const marker = L.marker([loc.lat, loc.lng]).addTo(mapInstanceRef.current);
@@ -247,6 +252,7 @@ const Map: React.FC<MapProps> = ({
         markerRefs.current.push(marker);
       }
     });
+    // --- ここまで変更なし ---
 
     if (validLocations.length < 2) {
       return;
@@ -266,38 +272,43 @@ const Map: React.FC<MapProps> = ({
       const startLatLng = L.latLng(startPoint.lat, startPoint.lng);
       const endLatLng = L.latLng(endPoint.lat, endPoint.lng);
 
+      // ★ 修正: 飛行機 (Plane) と船 (Ship) の両方で曲線を描画
       if (transportMode === 'Plane' || transportMode === 'Ship') {
           if (mapInstanceRef.current) {
-              let coordsToDraw: L.LatLng[];
               let polylineColor: string;
               let dashArray: string | undefined = undefined;
 
+              // 制御点を計算
+              const controlPoint = calculateControlPoint(startLatLng, endLatLng);
+              // ベジェ曲線の座標を生成
+              const coordsToDraw = getBezierCurveCoordinates(startLatLng, endLatLng, controlPoint);
+
               if (transportMode === 'Plane') {
-                  coordsToDraw = [startLatLng, endLatLng];
-                  polylineColor = 'green';
-                  dashArray = '5, 10';
+                  polylineColor = 'green'; // 飛行機の色
+                  dashArray = '5, 10'; // 飛行機の点線スタイル
               } else { // transportMode === 'Ship'
-                  const controlPoint = calculateControlPoint(startLatLng, endLatLng);
-                  coordsToDraw = getBezierCurveCoordinates(startLatLng, endLatLng, controlPoint);
-                  polylineColor = 'blue';
+                  polylineColor = 'blue'; // 船の色
+                  // dashArray は undefined のまま (実線)
               }
 
+              // ポリライン (曲線) を地図に追加
               const polyline = L.polyline(coordsToDraw, {
                   color: polylineColor,
                   weight: 3,
                   opacity: 0.7,
                   dashArray: dashArray,
               }).addTo(mapInstanceRef.current);
-              layerRefs.current.push(polyline);
-          }
-          if (transportMode === 'Ship') {
-              const controlPoint = calculateControlPoint(startLatLng, endLatLng);
-              allSegmentsRouteCoordsRef.current[i] = getBezierCurveCoordinates(startLatLng, endLatLng, controlPoint);
+              layerRefs.current.push(polyline); // 後で削除するために参照を保存
+
+              // アニメーションのために曲線の座標を保存
+              allSegmentsRouteCoordsRef.current[i] = coordsToDraw;
           } else {
+              // マップインスタンスがない場合のフォールバック (直線)
               allSegmentsRouteCoordsRef.current[i] = [startLatLng, endLatLng];
           }
-          return Promise.resolve();
+          return Promise.resolve(); // 非同期処理ではないため即時解決
       } else {
+        // --- OSRM経路検索の部分 (変更なし) ---
         return new Promise<void>((resolveRoutePromise) => {
           if (!mapInstanceRef.current) {
             allSegmentsRouteCoordsRef.current[i] = [startLatLng, endLatLng];
@@ -382,9 +393,11 @@ const Map: React.FC<MapProps> = ({
             resolveRoutePromise();
           }
         });
+        // --- ここまで変更なし ---
       }
     });
 
+    // --- 地図表示範囲の調整 (変更なし) ---
     Promise.allSettled(routePromises).then(() => {
       if (currentGeneration !== routeCalculationGenerationRef.current || !mapInstanceRef.current) return;
 
@@ -395,8 +408,10 @@ const Map: React.FC<MapProps> = ({
           }
       }
     });
-  }, [locations, transportOptions, onRoutingError]);
+    // --- ここまで変更なし ---
+  }, [locations, transportOptions, onRoutingError]); // 依存配列は変更なし
 
+  // --- アニメーション状態変更時のuseEffect (変更なし) ---
   useEffect(() => {
     if (!mapInstanceRef.current) return;
 
@@ -449,7 +464,9 @@ const Map: React.FC<MapProps> = ({
         }
     }
   }, [isPlaying, currentSegmentIndex, locations, transportOptions, segmentDurationSeconds, onSegmentComplete, animateMarker]);
+  // --- ここまで変更なし ---
 
+  // --- ピン刺しモード関連のuseEffect (変更なし) ---
   useEffect(() => {
     if (!mapInstanceRef.current) return;
     const map = mapInstanceRef.current;
@@ -472,11 +489,12 @@ const Map: React.FC<MapProps> = ({
       map.getContainer().style.cursor = '';
     };
   }, [isPickingLocation, onMapClickForPicking]);
+  // --- ここまで変更なし ---
 
 
   return (
     <div ref={mapRef} style={{ width: '100%', height: '100%' }} id="map-container" className="rounded-md bg-gray-100 dark:bg-slate-900">
-      {/* The map will be rendered here by Leaflet */}
+      {/* 地図はここに描画されます */}
     </div>
   );
 };

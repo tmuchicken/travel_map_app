@@ -53,7 +53,8 @@ export default function HomePage() {
   useEffect(() => {
     setIsPlaying(false);
     setCurrentSegmentIndex(0);
-    setMapError(null);
+    // locations変更時にmapErrorをクリアしないように変更 (ピン刺しモードのメッセージを維持するため)
+    // setMapError(null);
   }, [locations]);
 
   const handleLocationNameChange = useCallback((id: string, newName: string) => {
@@ -61,7 +62,7 @@ export default function HomePage() {
       prevLocations.map(loc => (loc.id === id ? { ...loc, name: newName, lat: undefined, lng: undefined, error: undefined } : loc))
     );
     setGeocodingState(prev => ({...prev, [id]: 'idle'}));
-    setMapError(null);
+    setMapError(null); // 手動変更時はエラークリア
   }, []);
 
   const handleTransportChange = useCallback((id: string, newTransport: string) => {
@@ -127,15 +128,17 @@ export default function HomePage() {
     }
   }, []);
 
+  // ★ 修正: 逆ジオコーディングのハンドラ
   const handleReverseGeocodeLocation = useCallback(async (locationId: string, latlng: L.LatLng) => {
     setGeocodingState(prev => ({...prev, [locationId]: 'loading'}));
-    setMapError(null);
+    setMapError(null); // 逆ジオコーディング開始時にエラーをクリア
     try {
       const apiUrl = `https://nominatim.openstreetmap.org/reverse?lat=${latlng.lat}&lon=${latlng.lng}&format=jsonv2`;
       const response = await fetch(apiUrl, { headers: { 'User-Agent': 'TravelRouteAnimationApp/1.0 (user@example.com)' } });
       if (!response.ok) throw new Error(`逆ジオコーディングサーバーエラー: ${response.statusText} (${response.status})`);
       const data = await response.json();
       if (data && data.display_name) {
+        // 地名が見つかった場合
         const display_name = data.display_name;
         setLocations(prevLocations =>
           prevLocations.map(loc =>
@@ -144,36 +147,37 @@ export default function HomePage() {
         );
         setGeocodingState(prev => ({...prev, [locationId]: 'idle'}));
       } else {
+        // ★ 修正: 地名が見つからない場合、エラーメッセージを設定せず、座標とデフォルト名のみ更新
         setLocations(prevLocations =>
-          prevLocations.map(loc => (loc.id === locationId ? { ...loc, lat: latlng.lat, lng: latlng.lng, name: `地点 (${latlng.lat.toFixed(4)}, ${latlng.lng.toFixed(4)})`, error: '地名が見つかりませんでした。' } : loc))
+          prevLocations.map(loc =>
+            loc.id === locationId ? { ...loc, lat: latlng.lat, lng: latlng.lng, name: `地点 (${latlng.lat.toFixed(4)}, ${latlng.lng.toFixed(4)})`, error: undefined } : loc // error: undefined に変更
+          )
         );
-         setGeocodingState(prev => ({...prev, [locationId]: 'idle'}));
+         setGeocodingState(prev => ({...prev, [locationId]: 'idle'})); // ローディングは終了
       }
     } catch (error) {
+      // ★ 修正: ネットワークエラーなどの場合のみエラーメッセージを設定
       const errorMessage = error instanceof Error ? error.message : '逆ジオコーディング中に不明なエラーが発生しました。';
        setLocations(prevLocations =>
           prevLocations.map(loc => (loc.id === locationId ? { ...loc, lat: latlng.lat, lng: latlng.lng, name: `地点 (${latlng.lat.toFixed(4)}, ${latlng.lng.toFixed(4)})`, error: `逆ジオコーディングエラー: ${errorMessage}` } : loc))
         );
       setGeocodingState(prev => ({...prev, [locationId]: 'error'}));
     } finally {
+        // 逆ジオコーディングが完了したらピン刺しモードを終了
         setPickingLocationId(null);
     }
   }, []);
 
-  // ★ 修正: ControlPanelに渡すための関数
+
   const handleGenerateRoute = useCallback(() => {
     const validLocations = locations.filter(loc => loc.lat !== undefined && loc.lng !== undefined);
     if (validLocations.length < 2) {
       setMapError("ルートを生成するには、出発地と目的地の両方に有効な座標が必要です。各地点の「検索」ボタンを押して座標を取得してください。");
       return;
     }
-    setIsPlaying(false); // アニメーションを停止
-    setCurrentSegmentIndex(0); // アニメーションを最初から
-    setMapError(null); // エラーメッセージをクリア
-    // ここでMapコンポーネントに経路再生成を促す処理を将来的に追加する可能性があります。
-    // 現状では、locationsが更新されるとMapコンポーネントのuseEffectが経路を再描画するため、
-    // この関数内での明示的な再描画指示は不要です。
-    // 主な役割はUIの状態リセットとエラーチェックです。
+    setIsPlaying(false);
+    setCurrentSegmentIndex(0);
+    setMapError(null);
     console.log("Route generation triggered. Locations:", locations);
   }, [locations]);
 
@@ -267,17 +271,21 @@ export default function HomePage() {
       const nextIndex = prevIndex + 1;
       const validLocationsCount = locations.filter(loc => loc.lat !== undefined && loc.lng !== undefined).length;
       if (nextIndex >= validLocationsCount - 1) {
-        setIsPlaying(false); // アニメーション終了
-        return 0; // 最初に戻るか、最後のインデックスで止めるかは要件次第 (ここでは最初に戻る)
+        setIsPlaying(false);
+        return 0;
       }
       return nextIndex;
     });
   }, [locations]);
 
   const handleMapRoutingError = useCallback((message: string) => {
-    setMapError(message);
-  }, []);
+    // ピン刺しモード中のメッセージは上書きしない
+    if (!pickingLocationId) {
+        setMapError(message);
+    }
+  }, [pickingLocationId]);
 
+  // ★ 修正: ピン刺しモード開始時のハンドラ
   const handleSelectLocationFromMap = useCallback((locationId: string) => {
     if (isPlaying) {
         setMapError("アニメーション再生中は地点を選択できません。アニメーションを停止してください。");
@@ -288,7 +296,9 @@ export default function HomePage() {
         return;
     }
     setPickingLocationId(locationId);
-    setMapError(`地図上で「${locations.find(loc => loc.id === locationId)?.name || locationId}」の地点をクリックしてください。`);
+    // ★ 修正: 赤い情報ポップアップを表示しないように変更
+    // setMapError(`地図上で「${locations.find(loc => loc.id === locationId)?.name || locationId}」の地点をクリックしてください。`);
+    setMapError(null); // 既存のエラーをクリア
   }, [isPlaying, pickingLocationId, locations]);
 
   const handleMapClickForPicking = useCallback((latlng: L.LatLng) => {
@@ -299,7 +309,7 @@ export default function HomePage() {
 
   const handleCancelPicking = useCallback(() => {
     setPickingLocationId(null);
-    setMapError(null);
+    setMapError(null); // エラーメッセージをクリア
     setGeocodingState(prev => {
         const newState = {...prev};
         if (pickingLocationId && newState[pickingLocationId] === 'loading') {
@@ -328,10 +338,11 @@ export default function HomePage() {
             onSaveProject={handleSaveProject}
             onLoadProject={handleLoadProject}
             onSelectFromMap={handleSelectLocationFromMap}
-            onGenerateRoute={handleGenerateRoute} // ★ 修正: handleGenerateRouteを渡す
+            onGenerateRoute={handleGenerateRoute}
           />
         </div>
         <div className="flex-1 flex flex-col gap-2 md:gap-4">
+           {/* ピン刺しモード中の青いメッセージ表示 */}
            {pickingLocationId !== null && (
                 <div className="p-3 bg-blue-100 border border-blue-400 text-blue-700 rounded-md shadow-sm relative" role="status">
                     <strong className="font-bold">地点選択モード: </strong>
@@ -345,7 +356,8 @@ export default function HomePage() {
                     </button>
                 </div>
             )}
-          {mapError && (
+          {/* mapError があり、かつピン刺しモードでない場合にエラー表示 */}
+          {mapError && !pickingLocationId && (
             <div className="p-3 bg-red-100 border border-red-400 text-red-700 rounded-md shadow-sm relative" role="alert">
               <strong className="font-bold">情報: </strong>
               <span className="block sm:inline">{mapError}</span>
