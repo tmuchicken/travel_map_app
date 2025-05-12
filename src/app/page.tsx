@@ -20,7 +20,7 @@ export interface LocationPoint {
 }
 
 export interface TransportOption {
-  name:string;
+  name: string;
   label: string;
 }
 
@@ -29,6 +29,7 @@ const MapWithNoSSR = dynamic(() => import('@/components/Map'), {
   loading: () => <div className="flex justify-center items-center h-full bg-gray-200 dark:bg-gray-700"><p className="text-slate-700 dark:text-slate-200">地図を読み込み中です...</p></div>,
 });
 
+// --- HomePage Component ---
 export default function HomePage() {
   const initialTransportOptions: TransportOption[] = useMemo(() => [
     { name: 'Car', label: '🚗' },
@@ -57,14 +58,15 @@ export default function HomePage() {
   const animationFrameIdForRecordingRef = useRef<number | null>(null);
   const canvasForRecordingRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const lastFrameTimeRef = useRef<number>(0); // フレーム描画間隔制御用
-  const frameCaptureInterval = 100; // 100msごと (10FPS相当) を目指す
+  const lastFrameTimeRef = useRef<number>(0);
+  const frameCaptureInterval = 100; // 100ms (10FPS target)
 
   useEffect(() => {
     setIsPlaying(false);
     setCurrentSegmentIndex(0);
   }, [locations]);
 
+  // --- Location and Transport Handlers ---
   const handleLocationNameChange = useCallback((id: string, newName: string) => {
     setLocations(prevLocations =>
       prevLocations.map(loc => (loc.id === id ? { ...loc, name: newName, lat: undefined, lng: undefined, error: undefined } : loc))
@@ -232,7 +234,6 @@ export default function HomePage() {
   // --- Recording Handlers ---
   const drawMapToCanvas = useCallback(async (timestamp: number) => {
     if (!isRecording || !mediaRecorderRef.current || mediaRecorderRef.current.state !== 'recording' || !canvasForRecordingRef.current) {
-      console.log('[DEBUG] drawMapToCanvas: Recording stopped or essential refs missing. Exiting draw loop.');
       if (animationFrameIdForRecordingRef.current) {
         cancelAnimationFrame(animationFrameIdForRecordingRef.current);
         animationFrameIdForRecordingRef.current = null;
@@ -240,218 +241,144 @@ export default function HomePage() {
       return;
     }
 
-    const mapElement = document.getElementById('map-container'); // Map.tsx内の地図コンテナID
+    const mapElement = document.getElementById('map-container');
     const targetCanvas = canvasForRecordingRef.current;
 
     if (!mapElement) {
-      console.error('[DEBUG] drawMapToCanvas: mapElement not found. Stopping draw loop.');
       if (animationFrameIdForRecordingRef.current) {
         cancelAnimationFrame(animationFrameIdForRecordingRef.current);
         animationFrameIdForRecordingRef.current = null;
       }
-      // Consider stopping recording here if map element is gone
-      // stopRecording(); // Potentially
       return;
     }
     
-    // フレームレート制御 (目標FPSに合わせて調整)
     if (timestamp - lastFrameTimeRef.current < frameCaptureInterval) {
         animationFrameIdForRecordingRef.current = requestAnimationFrame(drawMapToCanvas);
         return;
     }
     lastFrameTimeRef.current = timestamp;
 
-    console.log(`[DEBUG] drawMapToCanvas: Attempting to capture frame at ${timestamp.toFixed(2)}`);
-    const captureStartTime = performance.now();
     try {
       const canvasFromHtml = await html2canvas(mapElement, {
         useCORS: true,
-        logging: false, // trueにするとhtml2canvasの詳細ログが出る
+        logging: false,
         width: mapElement.offsetWidth,
         height: mapElement.offsetHeight,
-        // allowTaint: true, // CORS問題がある場合に試すが、セキュリティリスクあり
-        // foreignObjectRendering: true, // SVGなどのレンダリング改善のため、ただしサポート状況に注意
       });
-      const captureEndTime = performance.now();
-      console.log(`[DEBUG] drawMapToCanvas: html2canvas capture took ${(captureEndTime - captureStartTime).toFixed(2)}ms.`);
-
       const ctx = targetCanvas.getContext('2d');
       if (ctx) {
         ctx.clearRect(0, 0, targetCanvas.width, targetCanvas.height);
         ctx.drawImage(canvasFromHtml, 0, 0, targetCanvas.width, targetCanvas.height);
-        console.log(`[DEBUG] drawMapToCanvas: Frame drawn to targetCanvas. Canvas content (first 100 chars): ${targetCanvas.toDataURL('image/png').substring(0, 100)}...`);
-      } else {
-        console.error('[DEBUG] drawMapToCanvas: Failed to get 2D context from targetCanvas.');
       }
     } catch (captureError) {
-      const captureEndTime = performance.now();
-      console.error(`[DEBUG] drawMapToCanvas: Error capturing map with html2canvas after ${(captureEndTime - captureStartTime).toFixed(2)}ms:`, captureError);
-      // エラーが続く場合は録画を停止することも検討
+      console.error("Error capturing map with html2canvas:", captureError);
     }
 
     if (isRecording && mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
       animationFrameIdForRecordingRef.current = requestAnimationFrame(drawMapToCanvas);
-    } else {
-      console.log('[DEBUG] drawMapToCanvas: Recording seems to have stopped. Exiting draw loop.');
     }
-  }, [isRecording, frameCaptureInterval]); // isRecording と frameCaptureInterval を依存配列に追加
+  }, [isRecording, frameCaptureInterval]);
 
 
   const stopRecording = useCallback(() => {
-    console.log(`[DEBUG] stopRecording called. Current MediaRecorder state: ${mediaRecorderRef.current?.state}, isRecording state: ${isRecording}`);
-    
+    console.log("Attempting to stop recording. MediaRecorder state:", mediaRecorderRef.current?.state);
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+      mediaRecorderRef.current.stop();
+    } else if (mediaRecorderRef.current && mediaRecorderRef.current.state === "inactive") {
+        console.log("MediaRecorder already inactive, cleaning up animation frame.");
+    }
+
     if (animationFrameIdForRecordingRef.current) {
       cancelAnimationFrame(animationFrameIdForRecordingRef.current);
       animationFrameIdForRecordingRef.current = null;
-      console.log('[DEBUG] stopRecording: Recording animation frame cancelled.');
+      console.log("Recording animation frame cancelled.");
     }
 
-    if (mediaRecorderRef.current) {
-        if (mediaRecorderRef.current.state === "recording") {
-            console.log('[DEBUG] stopRecording: Calling mediaRecorder.stop().');
-            mediaRecorderRef.current.stop(); // This will trigger 'onstop'
-        } else {
-            console.log(`[DEBUG] stopRecording: MediaRecorder not in 'recording' state (state: ${mediaRecorderRef.current.state}). Will not call stop().`);
-        }
-    } else {
-        console.log('[DEBUG] stopRecording: mediaRecorderRef.current is null.');
-    }
-    
-    // streamRefのトラック停止はMediaRecorderのonstopで行うのが一般的だが、ここで呼ぶ場合もある
-    // if (streamRef.current) {
-    //   streamRef.current.getTracks().forEach(track => track.stop());
-    //   console.log('[DEBUG] stopRecording: Stream tracks stopped (if streamRef existed).');
-    // }
-
-    // Canvasのクリーンアップ (オプション)
     if (canvasForRecordingRef.current) {
         const ctx = canvasForRecordingRef.current.getContext('2d');
         if (ctx) {
             ctx.clearRect(0, 0, canvasForRecordingRef.current.width, canvasForRecordingRef.current.height);
-            console.log('[DEBUG] stopRecording: Target recording canvas cleared.');
         }
-        // デバッグ用にbodyに追加した場合の削除処理 (必要に応じて)
-        // if (canvasForRecordingRef.current.parentNode === document.body) {
-        //   document.body.removeChild(canvasForRecordingRef.current);
-        // }
+        if (canvasForRecordingRef.current.parentNode === document.body) {
+          document.body.removeChild(canvasForRecordingRef.current);
+          console.log("Debug canvas removed from body.");
+        }
     }
-    
-    // isRecording状態の更新は、MediaRecorderのonstopイベント後や、ユーザーが明示的に停止操作をした後が適切
-    // ここでsetIsRecording(false)を呼ぶと、onstopが呼ばれる前に状態が変わってしまう可能性がある
-    //setIsRecording(false); // ★ onstop や onerror で管理するのがより安全な場合が多い
-    console.log('[DEBUG] stopRecording: Processing finished.');
-  }, [isRecording]); // isRecording を依存配列に追加
+    setIsRecording(false); // Ensure isRecording is set to false
+    console.log("Stop recording requested and processed.");
+  }, []);
 
 
   const startRecording = useCallback(async () => {
-    console.log('[DEBUG] startRecording called.');
     if (!window.MediaRecorder) {
       setMapError('お使いのブラウザは録画機能に対応していません。');
-      console.error('[DEBUG] startRecording: MediaRecorder API not available.');
       return;
     }
 
-    const mapElement = document.getElementById('map-container'); // Map.tsx内の地図コンテナID
+    const mapElement = document.getElementById('map-container');
     if (!mapElement) {
       setMapError('地図要素が見つかりません。録画を開始できません。');
-      console.error('[DEBUG] startRecording: mapElement not found.');
       return;
     }
     const validLocations = locations.filter(loc => loc.lat !== undefined && loc.lng !== undefined);
     if (validLocations.length < 2) {
       setMapError("録画を開始するには、まず有効な経路を生成してください。");
-      console.warn('[DEBUG] startRecording: Not enough valid locations to start recording.');
       return;
     }
-    if (!isPlaying) {
+    if (!isPlaying) { // Ensure animation is playing before starting recording
         setMapError('アニメーションを再生してから録画を開始してください。');
-        console.warn('[DEBUG] startRecording: Animation is not playing. Recording requires active animation.');
-        // setIsPlaying(true); // 強制的に再生開始する場合
-        // setCurrentSegmentIndex(0);
         return;
     }
 
-    setIsRecording(true); // 先に状態をtrueにしておくことでdrawMapToCanvasが初回から動くようにする
+    setIsRecording(true);
     setMapError(null);
-    recordedChunksRef.current = []; // チャンクをリセット
+    recordedChunksRef.current = [];
 
     try {
-      console.log('[DEBUG] startRecording: Initializing canvas for recording...');
       if (!canvasForRecordingRef.current) {
         canvasForRecordingRef.current = document.createElement('canvas');
-        // デバッグ用表示 (任意)
+        // Optional: Append for debugging
         // canvasForRecordingRef.current.style.position = 'fixed'; canvasForRecordingRef.current.style.bottom = '10px'; canvasForRecordingRef.current.style.left = '10px'; canvasForRecordingRef.current.style.zIndex = '10000'; canvasForRecordingRef.current.style.border = '1px solid red'; document.body.appendChild(canvasForRecordingRef.current);
-        console.log('[DEBUG] startRecording: Recording canvas element created.');
       }
       const targetCanvas = canvasForRecordingRef.current;
       targetCanvas.width = mapElement.offsetWidth;
       targetCanvas.height = mapElement.offsetHeight;
-      console.log(`[DEBUG] startRecording: Recording canvas size set to: ${targetCanvas.width}x${targetCanvas.height}`);
 
-      // 初期フレームを描画試行
-      console.log('[DEBUG] startRecording: Attempting to draw initial frame...');
-      const initialCaptureStartTime = performance.now();
-      try {
-        const canvasFromHtml = await html2canvas(mapElement, { useCORS: true, logging: false, width: targetCanvas.width, height: targetCanvas.height });
-        const ctx = targetCanvas.getContext('2d');
-        if (ctx) {
-          ctx.clearRect(0,0, targetCanvas.width, targetCanvas.height);
-          ctx.drawImage(canvasFromHtml, 0, 0, targetCanvas.width, targetCanvas.height);
-          console.log(`[DEBUG] startRecording: Initial frame drawn successfully in ${(performance.now() - initialCaptureStartTime).toFixed(2)}ms.`);
-        } else {
-           console.error('[DEBUG] startRecording: Failed to get 2D context for initial frame.');
-        }
-      } catch (err) {
-        console.error(`[DEBUG] startRecording: Error drawing initial frame via html2canvas in ${(performance.now() - initialCaptureStartTime).toFixed(2)}ms:`, err);
-        // 初期フレーム失敗でも録画を試みるか、中止するか検討
-      }
-
-      console.log('[DEBUG] startRecording: Setting up MediaRecorder...');
-      if (streamRef.current) { // 前回のストリームが残っていれば停止
+      if (streamRef.current) {
         streamRef.current.getTracks().forEach(track => track.stop());
-        console.log('[DEBUG] startRecording: Stopped previous stream tracks.');
       }
-      streamRef.current = targetCanvas.captureStream(10); // 10 FPS: この値とframeCaptureIntervalを合わせる
-      console.log('[DEBUG] startRecording: Canvas stream captured.');
+      streamRef.current = targetCanvas.captureStream(10); // 10 FPS
 
       const options = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
-                      ? { mimeType: 'video/webm;codecs=vp9', videoBitsPerSecond: 1500000 } // ビットレートを少し上げる
-                      : MediaRecorder.isTypeSupported('video/webm;codecs=h264') // h264も試す
-                      ? { mimeType: 'video/webm;codecs=h264', videoBitsPerSecond: 1500000 }
+                      ? { mimeType: 'video/webm;codecs=vp9', videoBitsPerSecond: 1000000 }
                       : MediaRecorder.isTypeSupported('video/webm')
-                      ? { mimeType: 'video/webm', videoBitsPerSecond: 1500000 }
-                      : { videoBitsPerSecond: 1500000 };
-      console.log('[DEBUG] startRecording: MediaRecorder options:', options);
+                      ? { mimeType: 'video/webm', videoBitsPerSecond: 1000000 }
+                      : { videoBitsPerSecond: 1000000 };
       
-      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
-          console.warn(`[DEBUG] startRecording: MediaRecorder was already in state: ${mediaRecorderRef.current.state}. Attempting to stop before re-creating.`);
-          // ここで安全に停止・リセットする処理が必要な場合がある
-      }
       mediaRecorderRef.current = new MediaRecorder(streamRef.current, options);
 
       mediaRecorderRef.current.ondataavailable = (event: BlobEvent) => {
         if (event.data.size > 0) {
-          console.log(`[DEBUG] ondataavailable: Chunk received. Size: ${event.data.size}, Type: ${event.data.type}, Timestamp: ${event.timeStamp.toFixed(2)}`);
           recordedChunksRef.current.push(event.data);
-        } else {
-          console.log(`[DEBUG] ondataavailable: Empty chunk received. Timestamp: ${event.timeStamp.toFixed(2)}`);
         }
       };
 
       mediaRecorderRef.current.onstop = () => {
-        console.log(`[DEBUG] onstop: MediaRecorder stopped. Recorded chunks count: ${recordedChunksRef.current.length}`);
-        
+        if (animationFrameIdForRecordingRef.current) {
+          cancelAnimationFrame(animationFrameIdForRecordingRef.current);
+          animationFrameIdForRecordingRef.current = null;
+        }
         if (streamRef.current) {
             streamRef.current.getTracks().forEach((track: MediaStreamTrack) => track.stop());
-            console.log('[DEBUG] onstop: Stream tracks stopped.');
             streamRef.current = null;
         }
-        // animationFrameIdForRecordingRef は stopRecording でキャンセルされるはず
+        if (targetCanvas && targetCanvas.parentNode === document.body) {
+             document.body.removeChild(targetCanvas);
+        }
 
         if (recordedChunksRef.current.length === 0) {
-          setMapError("録画データが空です。動画の保存に失敗しました。");
-          console.warn('[DEBUG] onstop: No data recorded.');
-          setIsRecording(false);
+          setMapError("録画データが空です。");
+          setIsRecording(false); // Ensure isRecording is false if no data
           return;
         }
         try {
@@ -459,33 +386,36 @@ export default function HomePage() {
             const timestamp = new Date().toISOString().replace(/[:.-]/g, '').slice(0, 14);
             const filename = `travel-animation-${timestamp}.webm`;
             saveAs(blob, filename);
-            console.log(`[DEBUG] onstop: Video saved as "${filename}", Size: ${blob.size}`);
-            if (blob.size < 1000 && recordedChunksRef.current.length <=1) { // 非常に小さいファイルの場合
-                console.warn(`[DEBUG] onstop: Saved video is very small (size: ${blob.size} bytes, chunks: ${recordedChunksRef.current.length}). It might be a 0-second video if content was minimal.`);
-                setMapError(`保存された動画のサイズが非常に小さいです (${blob.size} バイト)。内容が正しく録画されていない可能性があります。`);
-            }
         } catch(saveError) {
-             console.error("[DEBUG] onstop: Failed to save video:", saveError);
+             console.error("Failed to save video:", saveError);
              setMapError("動画ファイルの保存に失敗しました。");
         } finally {
-            recordedChunksRef.current = []; // チャンクをクリア
-            setIsRecording(false); // 録画状態を確実にfalseに
-             console.log('[DEBUG] onstop: Recording process finished, state reset.');
+            recordedChunksRef.current = [];
+            setIsRecording(false); // Ensure isRecording is false after attempting to save
         }
       };
 
+      // ★ 修正: onerror のイベントハンドラ
       mediaRecorderRef.current.onerror = (event: Event) => {
+        console.error("MediaRecorder error:", event);
         let errorDetail = 'Unknown error';
-        if (event instanceof ErrorEvent) errorDetail = event.message;
-        // @ts-expect-error DOMError is deprecated but might appear
-        else if (event.error instanceof DOMException) errorDetail = event.error.message;
-        // @ts-expect-error
-        else if (event.error && event.error.name) errorDetail = event.error.name;
+        // 'error' プロパティの存在を確認し、それがErrorインスタンスかDOMExceptionかチェック
+        if ('error' in event && event.error) {
+            if (event.error instanceof DOMException) {
+                errorDetail = event.error.message;
+            } else if (event.error instanceof Error) {
+                errorDetail = event.error.message;
+            } else if (typeof event.error === 'object' && event.error !== null && 'name' in event.error) {
+                 // フォールバックとして name プロパティを試す
+                errorDetail = (event.error as {name: string}).name;
+            }
+        } else if (event instanceof DOMException) { // イベント自体がDOMExceptionの場合 (稀)
+            errorDetail = event.message;
+        }
 
-
-        console.error("[DEBUG] onerror: MediaRecorder error:", event, "Detail:", errorDetail);
         setMapError(`録画エラー: ${errorDetail}`);
         
+        // クリーンアップ処理
         if (animationFrameIdForRecordingRef.current) {
             cancelAnimationFrame(animationFrameIdForRecordingRef.current);
             animationFrameIdForRecordingRef.current = null;
@@ -494,17 +424,19 @@ export default function HomePage() {
             streamRef.current.getTracks().forEach((track: MediaStreamTrack) => track.stop());
             streamRef.current = null;
         }
+        if (targetCanvas && targetCanvas.parentNode === document.body) {
+             document.body.removeChild(targetCanvas);
+        }
         setIsRecording(false);
       };
       
-      console.log('[DEBUG] startRecording: Starting MediaRecorder...');
       mediaRecorderRef.current.start(200); // 200msごとに ondataavailable をトリガー
-      lastFrameTimeRef.current = performance.now(); // 描画ループの初回実行のために初期化
+      lastFrameTimeRef.current = performance.now();
       animationFrameIdForRecordingRef.current = requestAnimationFrame(drawMapToCanvas);
-      console.log('[DEBUG] startRecording: MediaRecorder started and drawMapToCanvas loop initiated.');
+      console.log("Recording started with MediaRecorder.start(200) at", Date.now());
 
     } catch (err) {
-      console.error('[DEBUG] startRecording: General error during setup:', err);
+      console.error('録画の開始に失敗しました:', err);
       setMapError(`録画の開始に失敗しました: ${err instanceof Error ? err.message : String(err)}`);
       setIsRecording(false);
       if (animationFrameIdForRecordingRef.current) {
@@ -515,7 +447,7 @@ export default function HomePage() {
            document.body.removeChild(canvasForRecordingRef.current);
        }
     }
-  }, [isPlaying, locations, drawMapToCanvas]); // isPlaying, locations, drawMapToCanvas を依存配列に追加
+  }, [isPlaying, locations, drawMapToCanvas]);
 
 
   // --- Animation Handlers ---
@@ -525,7 +457,6 @@ export default function HomePage() {
         return;
     }
     if (isRecording) {
-      console.log('[DEBUG] handleStopAnimation: Animation stopped during recording, stopping recording as well.');
       stopRecording();
     }
     setIsPlaying(false);
@@ -540,7 +471,6 @@ export default function HomePage() {
     }
     if (isRecording) {
         setMapError("録画中は再生/一時停止できません。");
-        console.warn('[DEBUG] handlePlayPauseToggle: Attempted to play/pause during recording.');
         return;
     }
     const validLocations = locations.filter(loc => loc.lat !== undefined && loc.lng !== undefined);
@@ -551,9 +481,7 @@ export default function HomePage() {
     setMapError(null);
     setIsPlaying(prevIsPlaying => {
       const newIsPlaying = !prevIsPlaying;
-      console.log(`[DEBUG] handlePlayPauseToggle: isPlaying toggled to ${newIsPlaying}`);
       if (newIsPlaying && currentSegmentIndex >= validLocations.length - 1 && validLocations.length > 1) {
-          console.log('[DEBUG] handlePlayPauseToggle: Animation was complete, resetting to start.');
           setCurrentSegmentIndex(0);
       }
       return newIsPlaying;
@@ -574,35 +502,24 @@ export default function HomePage() {
   }, [pickingLocationId, isRecording]);
 
    const handleSegmentComplete = useCallback(() => {
-    console.log(`[DEBUG] handleSegmentComplete: Current segment index ${currentSegmentIndex} completed.`);
     setCurrentSegmentIndex(prevIndex => {
       const nextIndex = prevIndex + 1;
       const validLocationsCount = locations.filter(loc => loc.lat !== undefined && loc.lng !== undefined).length;
-      console.log(`[DEBUG] handleSegmentComplete: Next index will be ${nextIndex}, valid locations: ${validLocationsCount}`);
-
       if (nextIndex >= validLocationsCount - 1) {
-        console.log('[DEBUG] handleSegmentComplete: All segments complete or no more segments.');
         setIsPlaying(false);
         if (isRecording) {
-            console.log('[DEBUG] handleSegmentComplete: Animation ended during recording, stopping recording.');
             stopRecording();
         }
         return 0;
       }
       return nextIndex;
     });
-  }, [currentSegmentIndex, locations, isRecording, stopRecording]); // currentSegmentIndex を追加
-
-  const handleMapRoutingError = useCallback((message: string) => {
-    if (!pickingLocationId) {
-        setMapError(message);
-    }
-  }, [pickingLocationId]);
+  }, [locations, isRecording, stopRecording]);
 
   const getPickingLocationLabel = useCallback((id: string | null, locs: LocationPoint[]): string => {
     if (!id) return '';
     const loc = locs.find(l => l.id === id);
-    if (loc && loc.name) return loc.name;
+    if (loc && loc.name && loc.name.trim() !== '' && !loc.name.startsWith("地点 (")) return loc.name;
 
     if (id === 'start') return '出発地';
     if (id === 'end') return '目的地';
@@ -611,7 +528,7 @@ export default function HomePage() {
       const waypointIndex = waypoints.findIndex(w => w.id === id);
       return `中継地点 ${waypointIndex >= 0 ? waypointIndex + 1 : '?'}`;
     }
-    return id;
+    return loc?.name || id; // Fallback to name or ID
   }, []);
 
 
@@ -628,7 +545,7 @@ export default function HomePage() {
          setMapError(`現在、別の地点 (${getPickingLocationLabel(pickingLocationId, locations)}) を選択中です。まずそちらを完了またはキャンセルしてください。`);
         return;
     }
-    if (pickingLocationId === locationId) {
+    if (pickingLocationId === locationId) { // Toggle off if same button is clicked
         setPickingLocationId(null);
         setMapError(null);
     } else {
@@ -668,7 +585,7 @@ export default function HomePage() {
             locations={locations}
             transportOptions={initialTransportOptions}
             geocodingState={geocodingState}
-            pickingLocationId={pickingLocationId}
+            pickingLocationId={pickingLocationId} // Pass pickingLocationId to ControlPanel
             onLocationNameChange={handleLocationNameChange}
             onTransportChange={handleTransportChange}
             onAddWaypoint={addWaypoint}
@@ -707,7 +624,7 @@ export default function HomePage() {
               </button>
             </div>
           )}
-          <main className="bg-white dark:bg-slate-800 rounded-md shadow-md flex-1 min-h-[400px] md:min-h-[500px] lg:min-h-[600px] relative overflow-hidden" id="map-container-wrapper"> {/* ★ Map.tsx の id と合わせるなら "map-container" */}
+          <main className="bg-white dark:bg-slate-800 rounded-md shadow-md flex-1 min-h-[400px] md:min-h-[500px] lg:min-h-[600px] relative overflow-hidden" id="map-container-wrapper">
             <MapWithNoSSR
               locations={locations}
               transportOptions={initialTransportOptions}
