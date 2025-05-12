@@ -1,26 +1,26 @@
 @import "tailwindcss";
 
+/* アプリケーション全体で使用するカスタムプロパティ */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --background: #ffffff; /* ライトモードの背景色 */
+  --foreground: #171717; /* ライトモードの文字色 */
+  /* --font-inter は layout.tsx の next/font から提供されるCSS変数です。
+     この変数は tailwind.config.js で 'sans' フォントファミリとして参照されることを想定しています。 */
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --background: #0a0a0a; /* ダークモードの背景色 */
+    --foreground: #ededed; /* ダークモードの文字色 */
   }
 }
 
 body {
-  background: var(--background);
+  /*
+    font-family は、tailwind.config.js で設定されたデフォルトの sans-serif フォント
+    (このプロジェクトでは Inter フォントを想定) が適用されるようにします。
+    そのため、ここでの直接的な font-family 指定は不要です。
+  */
+  background-color: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
 }
