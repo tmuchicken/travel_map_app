@@ -47,30 +47,29 @@ export default function HomePage() {
 
   // Animation State
   const [isPlaying, setIsPlaying] = useState(false);
-  const [currentSegmentIndex, setCurrentSegmentIndex] = useState(0); // 最初は0番目の区間から
-  const [animationSpeed, setAnimationSpeed] = useState(1); // 1倍速
+  const [currentSegmentIndex, setCurrentSegmentIndex] = useState(0);
+  // 新しいアニメーション速度のステート (例: 1kmを何秒で移動するか)
+  const [animationSpeedKps, setAnimationSpeedKps] = useState(5); // 初期値: 1kmあたり5秒
 
-  // 経路情報が変更されたらアニメーションをリセット
   useEffect(() => {
     setIsPlaying(false);
     setCurrentSegmentIndex(0);
   }, [locations]);
 
-
-  const handleLocationNameChange = useCallback((id: string, newName: string) => {
+  const handleLocationNameChange = useCallback(/* ... */ (id: string, newName: string) => {
     setLocations(prevLocations =>
       prevLocations.map(loc => (loc.id === id ? { ...loc, name: newName, lat: undefined, lng: undefined, error: undefined } : loc))
     );
     setGeocodingState(prev => ({...prev, [id]: 'idle'}));
   }, []);
 
-  const handleTransportChange = useCallback((id: string, newTransport: string) => {
+  const handleTransportChange = useCallback(/* ... */ (id: string, newTransport: string) => {
     setLocations(prevLocations =>
       prevLocations.map(loc => (loc.id === id ? { ...loc, transport: newTransport } : loc))
     );
   }, []);
 
-  const addWaypoint = useCallback(() => {
+  const addWaypoint = useCallback(/* ... */ () => {
     const newWaypointId = `waypoint-${locations.filter(loc => loc.id.startsWith('waypoint')).length + 1}`;
     setLocations(prevLocations => {
       const endIndex = prevLocations.findIndex(loc => loc.id === 'end');
@@ -80,7 +79,7 @@ export default function HomePage() {
     });
   }, [locations, initialTransportOptions]);
 
-  const removeWaypoint = useCallback((idToRemove: string) => {
+  const removeWaypoint = useCallback(/* ... */ (idToRemove: string) => {
     setLocations(prevLocations => prevLocations.filter(loc => loc.id !== idToRemove));
     setGeocodingState(prev => {
       const newState = {...prev};
@@ -132,8 +131,6 @@ export default function HomePage() {
       alert("ルートを生成するには、出発地と目的地の両方に有効な座標が必要です。各地点の「検索」ボタンを押して座標を取得してください。");
       return;
     }
-    console.log("Route generation triggered. Map component will update with new locations:", validLocations);
-    // アニメーションを初期状態に戻す
     setIsPlaying(false);
     setCurrentSegmentIndex(0);
     alert("経路情報を更新しました。地図上で経路が再描画されます。「再生」ボタンでアニメーションを開始できます。");
@@ -142,7 +139,6 @@ export default function HomePage() {
   const handleSaveProject = useCallback(() => console.log("Save project clicked", locations), [locations]);
   const handleLoadProject = useCallback(() => console.log("Load project clicked"), []);
 
-  // Animation Control Handlers
   const handlePlayPauseToggle = useCallback(() => {
     const validLocations = locations.filter(loc => loc.lat !== undefined && loc.lng !== undefined);
     if (validLocations.length < 2 && !isPlaying) {
@@ -150,33 +146,31 @@ export default function HomePage() {
         return;
     }
     setIsPlaying(prev => !prev);
-    // もし停止状態から再生を開始し、かつ最後の区間まで再生済みだったら最初に戻す
-    if (!isPlaying && currentSegmentIndex >= validLocations.length - 1) {
+    if (!isPlaying && currentSegmentIndex >= validLocations.length - 1 && validLocations.length > 1) { // length > 1 を追加
         setCurrentSegmentIndex(0);
     }
   }, [isPlaying, locations, currentSegmentIndex]);
 
   const handleStopAnimation = useCallback(() => {
     setIsPlaying(false);
-    setCurrentSegmentIndex(0); // アニメーションを最初からにする
+    setCurrentSegmentIndex(0);
   }, []);
 
-  const handleSpeedChange = useCallback((speed: number) => {
-    setAnimationSpeed(speed);
+  const handleSpeedChange = useCallback((speedPerKm: number) => { // 引数を変更
+    setAnimationSpeedKps(speedPerKm);
   }, []);
 
   const handleSegmentComplete = useCallback(() => {
     setCurrentSegmentIndex(prevIndex => {
       const nextIndex = prevIndex + 1;
       const validLocations = locations.filter(loc => loc.lat !== undefined && loc.lng !== undefined);
-      if (nextIndex >= validLocations.length - 1) { // 全区間アニメーション完了
+      if (nextIndex >= validLocations.length - 1) {
         setIsPlaying(false);
-        return 0; // 次回再生時は最初から
+        return 0;
       }
       return nextIndex;
     });
   }, [locations]);
-
 
   return (
     <div className="flex flex-col min-h-screen bg-slate-100 antialiased">
@@ -205,7 +199,7 @@ export default function HomePage() {
               transportOptions={initialTransportOptions}
               isPlaying={isPlaying}
               currentSegmentIndex={currentSegmentIndex}
-              animationSpeed={animationSpeed}
+              animationSpeedKps={animationSpeedKps} // 新しい速度props
               onSegmentComplete={handleSegmentComplete}
             />
           </main>
@@ -213,8 +207,8 @@ export default function HomePage() {
             isPlaying={isPlaying}
             onPlayPause={handlePlayPauseToggle}
             onStop={handleStopAnimation}
-            speed={animationSpeed}
-            onSpeedChange={handleSpeedChange}
+            speedKps={animationSpeedKps} // 新しい速度props
+            onSpeedKpsChange={handleSpeedChange} // 新しいハンドラprops
           />
         </div>
       </div>
