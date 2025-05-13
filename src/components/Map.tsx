@@ -54,7 +54,7 @@ const calculateControlPoint = (start: L.LatLng, end: L.LatLng): L.LatLng => {
 interface MapProps {
   center?: L.LatLngExpression;
   zoom?: number;
-  locations: LocationPoint[];
+  locations: LocationPoint[]; // photoDataUrl を含む LocationPoint を受け取る
   transportOptions: TransportOption[];
   isPlaying: boolean;
   currentSegmentIndex: number;
@@ -150,7 +150,7 @@ const Map: React.FC<MapProps> = ({
       }
       if (mapInstanceRef.current) {
         activeRoutingControls.current.forEach(control => {
-          if (mapInstanceRef.current) { // hasLayerチェックは削除
+          if (mapInstanceRef.current) {
             try { mapInstanceRef.current.removeControl(control); } catch (_e) { console.warn("Error removing active routing control during cleanup:", _e); }
           }
         });
@@ -166,6 +166,9 @@ const Map: React.FC<MapProps> = ({
              try {
                 if (marker.getTooltip()) {
                     marker.unbindTooltip();
+                }
+                if (marker.getPopup()){ // ★ ポップアップも解除する
+                    marker.unbindPopup();
                 }
                 mapInstanceRef.current.removeLayer(marker);
              } catch (_e) { console.warn("Error removing marker during cleanup:", _e); }
@@ -213,8 +216,8 @@ const Map: React.FC<MapProps> = ({
     const currentGeneration = routeCalculationGenerationRef.current;
 
     activeRoutingControls.current.forEach(control => {
-      if (mapInstanceRef.current) { // hasLayerチェックは削除
-        try { mapInstanceRef.current.removeControl(control); } catch(_e){ console.warn("Error removing old active routing control:", _e); } // ★ 228行目付近のエラーがここなら _e に
+      if (mapInstanceRef.current) {
+        try { mapInstanceRef.current.removeControl(control); } catch(_e){ console.warn("Error removing old active routing control:", _e); }
       }
     });
     activeRoutingControls.current = [];
@@ -231,6 +234,9 @@ const Map: React.FC<MapProps> = ({
         if (marker.getTooltip()) {
             marker.unbindTooltip();
         }
+        if (marker.getPopup()){ // ★ ポップアップも解除
+            marker.unbindPopup();
+        }
         mapInstanceRef.current.removeLayer(marker);
       }
     });
@@ -244,13 +250,31 @@ const Map: React.FC<MapProps> = ({
     validLocations.forEach(loc => {
       if (mapInstanceRef.current && typeof loc.lat === 'number' && typeof loc.lng === 'number') {
         const marker = L.marker([loc.lat, loc.lng]).addTo(mapInstanceRef.current);
-        if ((loc.showLabel ?? true) && loc.name && loc.name.trim() !== '') {
-          marker.bindTooltip(loc.name, {
-            permanent: true,
-            direction: 'top',
-            offset: L.point(0, -15),
-            className: 'custom-location-tooltip'
-          }).openTooltip();
+
+        // ★★★ ツールチップまたはポップアップに写真と地名を表示 ★★★
+        let content = `<div style="text-align: center;">`;
+        if (loc.name && loc.name.trim() !== '') {
+          content += `<strong>${loc.name}</strong>`;
+        }
+        if (loc.photoDataUrl) {
+          // 地名と写真の間に改行を入れるなど、見た目を調整
+          if (loc.name && loc.name.trim() !== '') content += `<br/>`;
+          content += `<img src="${loc.photoDataUrl}" alt="思い出の写真" style="max-width: 100px; max-height: 100px; margin-top: 5px; border-radius: 4px;" />`;
+        }
+        content += `</div>`;
+
+        if ((loc.showLabel ?? true) && ( (loc.name && loc.name.trim() !== '') || loc.photoDataUrl) ) {
+          // 地名または写真がある場合のみツールチップ/ポップアップを設定
+          // 今回は、写真も表示するので、クリックで表示するポップアップの方が操作性が良いかもしれません。
+          // 常時表示のツールチップだと写真で地図が隠れすぎる可能性があるため。
+          // ここではポップアップで実装します。常時表示が良い場合は bindTooltip に戻してください。
+          marker.bindPopup(content, {
+            // permanent: true, // ポップアップは通常クリックで表示
+            // direction: 'top',
+            // offset: L.point(0, -15),
+            // className: 'custom-location-tooltip' // ポップアップ用のクラスを別途定義しても良い
+          });
+          // .openTooltip(); // ポップアップは通常自動で開かない
         }
         markerRefs.current.push(marker);
       }
@@ -267,6 +291,7 @@ const Map: React.FC<MapProps> = ({
     }
 
     const routePromises = validLocations.map((startPoint, i) => {
+      // ... (経路検索ロジックは変更なし)
       if (i >= validLocations.length - 1) return Promise.resolve();
       const endPoint = validLocations[i + 1];
       const transportMode = startPoint.transport;
@@ -326,7 +351,7 @@ const Map: React.FC<MapProps> = ({
           });
           routingControl.on('routesfound', function(this: L.Routing.Control, e_routes: L.Routing.RoutingResultEvent) {
             if (currentGeneration !== routeCalculationGenerationRef.current || !mapInstanceRef.current) {
-              if (mapInstanceRef.current && activeRoutingControls.current.includes(this)) { // hasLayerチェックは削除
+              if (mapInstanceRef.current && activeRoutingControls.current.includes(this)) {
                 try { mapInstanceRef.current.removeControl(this); } catch(_err){ console.warn("Error removing control in stale routesfound", _err); }
                 activeRoutingControls.current = activeRoutingControls.current.filter(c => c !== this);
               }
@@ -346,7 +371,7 @@ const Map: React.FC<MapProps> = ({
                 layerRefs.current.push(fallbackPolyline);
               }
             }
-            if (mapInstanceRef.current && activeRoutingControls.current.includes(this)) { // hasLayerチェックは削除
+            if (mapInstanceRef.current && activeRoutingControls.current.includes(this)) {
               try { mapInstanceRef.current.removeControl(this); } catch(_err){ console.warn("Error removing control in routesfound", _err); }
               activeRoutingControls.current = activeRoutingControls.current.filter(c => c !== this);
             }
@@ -354,7 +379,7 @@ const Map: React.FC<MapProps> = ({
           });
           routingControl.on('routingerror', function(this: L.Routing.Control, errEvent: L.Routing.RoutingErrorEvent) {
             if (currentGeneration !== routeCalculationGenerationRef.current || !mapInstanceRef.current) {
-              if (mapInstanceRef.current && activeRoutingControls.current.includes(this)) { // hasLayerチェックは削除
+              if (mapInstanceRef.current && activeRoutingControls.current.includes(this)) {
                  try { mapInstanceRef.current.removeControl(this); } catch(_err){ console.warn("Error removing control in stale routingerror", _err); }
                 activeRoutingControls.current = activeRoutingControls.current.filter(c => c !== this);
               }
@@ -366,7 +391,7 @@ const Map: React.FC<MapProps> = ({
               layerRefs.current.push(fallbackPolyline);
             }
             allSegmentsRouteCoordsRef.current[i] = [startLatLng, endLatLng];
-            if (mapInstanceRef.current && activeRoutingControls.current.includes(this)) { // hasLayerチェックは削除
+            if (mapInstanceRef.current && activeRoutingControls.current.includes(this)) {
               try { mapInstanceRef.current.removeControl(this); } catch(_err){ console.warn("Error removing control in routingerror", _err); }
               activeRoutingControls.current = activeRoutingControls.current.filter(c => c !== this);
             }
@@ -394,6 +419,7 @@ const Map: React.FC<MapProps> = ({
   }, [locations, transportOptions, onRoutingError]);
 
   useEffect(() => {
+    // ... (アニメーションロジックは変更なし)
     if (!mapInstanceRef.current) return;
     const validLocations = locations.filter(loc => typeof loc.lat === 'number' && typeof loc.lng === 'number');
     if (isPlaying && currentSegmentIndex < validLocations.length - 1 && validLocations.length > 0) {
@@ -440,21 +466,15 @@ const Map: React.FC<MapProps> = ({
     }
   }, [isPlaying, currentSegmentIndex, locations, transportOptions, segmentDurationSeconds, onSegmentComplete, animateMarker]);
 
-  // ピン刺しモード関連のuseEffect
   useEffect(() => {
+    // ... (ピン刺しモードロジックは変更なし)
     if (!mapInstanceRef.current) return;
     const map = mapInstanceRef.current;
-
-    // ▼▼▼ 未使用だった handleMapClick を削除 ▼▼▼
-    // const handleMapClick = () => { /* ... */ }; // この行自体を削除
-    // ▲▲▲ ここまで削除 ▲▲▲
-
-    const handleMapClickWithLatLng = (e_click: L.LeafletMouseEvent) => { // 引数名を e_click に変更
+    const handleMapClickWithLatLng = (e_click: L.LeafletMouseEvent) => {
       if (isPickingLocation) {
         onMapClickForPicking(e_click.latlng);
       }
     };
-
     if (isPickingLocation) {
       map.on('click', handleMapClickWithLatLng);
       if(map.getContainer()) map.getContainer().style.cursor = 'crosshair';

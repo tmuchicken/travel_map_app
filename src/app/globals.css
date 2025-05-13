@@ -76,3 +76,25 @@ body {
   border-right-color: rgba(100, 116, 139, 0.5) !important;
 }
 /* --- ▲▲▲ 追加 ▲▲▲ --- */
+
+/* src/app/globals.css に追記 */
+
+.leaflet-popup-content-wrapper .leaflet-popup-content {
+  /* ポップアップ全体の幅や余白を調整したい場合 */
+  /* width: auto !important; /* 必要に応じて */
+  /* padding: 8px !important; */
+}
+
+.leaflet-popup-content img {
+  max-width: 150px; /* ポップアップ内の画像の最大幅 */
+  max-height: 150px; /* ポップアップ内の画像の最大高さ */
+  display: block; /* 中央揃えしやすくするため */
+  margin: 5px auto 0; /* 画像の上のマージンと左右中央揃え */
+  border-radius: 4px;
+  border: 1px solid #ccc;
+}
+
+.leaflet-popup-content strong {
+  display: block; /* 地名もブロック要素にして改行されやすくする */
+  text-align: center;
+}
