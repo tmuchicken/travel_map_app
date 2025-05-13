@@ -5,8 +5,6 @@
 :root {
   --background: #ffffff; /* ライトモードの背景色 */
   --foreground: #171717; /* ライトモードの文字色 */
-  /* --font-inter は layout.tsx の next/font から提供されるCSS変数です。
-     この変数は tailwind.config.js で 'sans' フォントファミリとして参照されることを想定しています。 */
 }
 
 @media (prefers-color-scheme: dark) {
@@ -17,103 +15,88 @@
 }
 
 body {
-  /*
-    font-family は、tailwind.config.js で設定されたデフォルトの sans-serif フォント
-    (このプロジェクトでは Inter フォントを想定) が適用されるようにします。
-    そのため、ここでの直接的な font-family 指定は不要です。
-  */
   background-color: var(--background);
   color: var(--foreground);
 }
 
-/* src/app/globals.css */
-/* ... (既存のスタイル) ... */
-
+/* Leafletの常時表示ツールチップ用のカスタムスタイル */
 .custom-location-tooltip {
-  background-color: rgba(255, 255, 255, 0.9) !important;
-  border: 1px solid rgba(0, 0, 0, 0.2) !important;
-  border-radius: 4px !important;
-  padding: 5px 8px !important; /* 少しパディングを増やす */
-  font-size: 0.8rem !important; /* 地名の文字サイズ */
-  color: #333 !important;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24);
-  /* white-space: nowrap; は写真も含む場合は折り返しが必要になるので削除または調整 */
-  max-width: 150px; /* ツールチップ全体の最大幅 (写真のサイズに応じて調整) */
+  /* ▼▼▼ 全体的なサイズ調整 (約1.5倍) ▼▼▼ */
+  background-color: rgba(255, 255, 255, 0.95) !important; /* 背景をより不透明に近く */
+  border: 1px solid rgba(0, 0, 0, 0.25) !important;
+  border-radius: 6px !important;                       /* 角丸も少し大きく */
+  padding: 6px 12px !important;                         /* 内側余白も約1.5倍 */
+  font-size: 1.05rem !important;  /* 文字サイズ (0.8rem * 1.5 = 1.2rem だったが、地名のみなので少し控えめに) */
+  color: #222 !important;                             /* 文字色を少し濃く */
+  box-shadow: 0 2px 5px rgba(0,0,0,0.15), 0 2px 4px rgba(0,0,0,0.25); /* 影も少し強く */
+  max-width: 225px; /* ツールチップ全体の最大幅 (150px * 1.5 = 225px) */
+  /* white-space: normal; を指定すると自動で折り返す */
+  white-space: normal;
+  word-break: break-all; /* 長い単語も折り返す */
+  /* ▲▲▲ 全体的なサイズ調整 ▲▲▲ */
 }
 
 .dark .custom-location-tooltip {
-  background-color: rgba(55, 65, 81, 0.9) !important;
-  border-color: rgba(100, 116, 139, 0.5) !important;
-  color: #f3f4f6 !important;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.3), 0 1px 2px rgba(0,0,0,0.4);
+  background-color: rgba(40, 50, 65, 0.95) !important;
+  border-color: rgba(120, 136, 159, 0.6) !important;
+  color: #e1e2e3 !important;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.35), 0 2px 4px rgba(0,0,0,0.45);
+}
+
+/* ツールチップ内の地名 (strongタグ) のスタイル */
+.custom-location-tooltip strong {
+  display: block;
+  text-align: center;
+  font-weight: 600; /* 少し太く */
+  margin-bottom: 2px; /* ★ 地名と画像の間のスペースを狭める */
+  font-size: 1.125rem; /* 地名のフォントサイズを少し大きめに (1rem * 1.125 = 18px Tailwindのtext-lg相当) */
+  line-height: 1.4; /* 行間調整 */
 }
 
 /* ツールチップ内の画像スタイル */
 .custom-location-tooltip img {
-  max-width: 70px;  /* ツールチップ内での写真の最大幅を調整 */
-  max-height: 70px; /* ツールチップ内での写真の最大高さを調整 */
-  margin-top: 4px;
-  border-radius: 3px;
+  max-width: 105px;  /* 画像の最大幅 (70px * 1.5 = 105px) */
+  max-height: 105px; /* 画像の最大高さ (70px * 1.5 = 105px) */
+  margin-top: 2px;   /* ★ 地名とのマージンをCSSで制御 (strongのmargin-bottomと連携) */
+  border-radius: 4px; /* 角丸も少し大きく */
   display: block;
   margin-left: auto;
   margin-right: auto;
+  border: 1px solid #ddd; /* 画像の枠線を少し薄く */
 }
 
-.custom-location-tooltip strong {
-  display: block; /* 地名をブロック要素に */
-  text-align: center;
-  margin-bottom: 2px; /* 地名と写真の間のスペース */
+.dark .custom-location-tooltip img {
+  border-color: #555;
 }
 
-/* ... (既存の吹き出し矢印のスタイル) ... */
+
 /* Leafletツールチップの吹き出しの矢印の色も調整 (任意) */
+/* 現状のツールチップはマーカーの上なので :before は border-bottom-color を使う */
 .leaflet-tooltip-top:before {
-  border-top-color: rgba(0, 0, 0, 0.2) !important;
+  border-top-color: rgba(0, 0, 0, 0.25) !important; /* 変更なし、または下の設定に合わせる */
 }
 .dark .leaflet-tooltip-top:before {
-  border-top-color: rgba(100, 116, 139, 0.5) !important;
+  border-top-color: rgba(120, 136, 159, 0.6) !important; /* 変更なし、または下の設定に合わせる */
 }
-
+/* もしツールチップがマーカーの下に出る場合はこちらを調整 */
 .leaflet-tooltip-bottom:before {
-  border-bottom-color: rgba(0, 0, 0, 0.2) !important;
+  border-bottom-color: rgba(0, 0, 0, 0.25) !important;
 }
 .dark .leaflet-tooltip-bottom:before {
-  border-bottom-color: rgba(100, 116, 139, 0.5) !important;
+  border-bottom-color: rgba(120, 136, 159, 0.6) !important;
 }
 
+/* ... (left, right の矢印スタイルも同様に調整可能) ... */
 .leaflet-tooltip-left:before {
-  border-left-color: rgba(0, 0, 0, 0.2) !important;
+  border-left-color: rgba(0, 0, 0, 0.25) !important;
 }
 .dark .leaflet-tooltip-left:before {
-  border-left-color: rgba(100, 116, 139, 0.5) !important;
+  border-left-color: rgba(120, 136, 159, 0.6) !important;
 }
 
 .leaflet-tooltip-right:before {
-  border-right-color: rgba(0, 0, 0, 0.2) !important;
+  border-right-color: rgba(0, 0, 0, 0.25) !important;
 }
 .dark .leaflet-tooltip-right:before {
-  border-right-color: rgba(100, 116, 139, 0.5) !important;
-}
-/* --- ▲▲▲ 追加 ▲▲▲ --- */
-
-/* src/app/globals.css に追記 */
-
-.leaflet-popup-content-wrapper .leaflet-popup-content {
-  /* ポップアップ全体の幅や余白を調整したい場合 */
-  /* width: auto !important; /* 必要に応じて */
-  /* padding: 8px !important; */
-}
-
-.leaflet-popup-content img {
-  max-width: 150px; /* ポップアップ内の画像の最大幅 */
-  max-height: 150px; /* ポップアップ内の画像の最大高さ */
-  display: block; /* 中央揃えしやすくするため */
-  margin: 5px auto 0; /* 画像の上のマージンと左右中央揃え */
-  border-radius: 4px;
-  border: 1px solid #ccc;
-}
-
-.leaflet-popup-content strong {
-  display: block; /* 地名もブロック要素にして改行されやすくする */
-  text-align: center;
+  border-right-color: rgba(120, 136, 159, 0.6) !important;
 }

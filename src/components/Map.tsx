@@ -247,25 +247,27 @@ const Map: React.FC<MapProps> = ({
         const marker = L.marker([loc.lat, loc.lng]).addTo(mapInstanceRef.current);
 
         // ▼▼▼ 常時表示ツールチップに写真と地名を表示 ▼▼▼
-        let tooltipContent = `<div style="text-align: center; min-width: 50px;">`; // ツールチップ全体の最小幅など
+        let tooltipContent = `<div style="text-align: center; min-width: 75px;">`; // 全体の最小幅を少し広げる (1.5倍の目安)
         if (loc.name && loc.name.trim() !== '') {
           const escapedName = loc.name.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
           tooltipContent += `<strong>${escapedName}</strong>`;
         }
         if (loc.photoDataUrl) {
-          if (loc.name && loc.name.trim() !== '') tooltipContent += `<br/>`;
-          // CSSクラス `.custom-location-tooltip img` でスタイル調整することを推奨
-          tooltipContent += `<img src="${loc.photoDataUrl}" alt="写真" style="max-width: 60px; max-height: 60px; margin-top: 4px; border-radius: 3px; display: block; margin-left: auto; margin-right: auto;" />`;
+          // 地名と写真の間はCSSで調整するので、<br/> は状況に応じて
+          // if (loc.name && loc.name.trim() !== '') tooltipContent += `<br/>`;
+          // ▼▼▼ 画像のインラインスタイルでサイズを少し大きくする (例: 90px x 90px) ▼▼▼
+          tooltipContent += `<img src="${loc.photoDataUrl}" alt="写真" style="max-width: 90px; max-height: 90px; margin-top: 3px; border-radius: 3px; display: block; margin-left: auto; margin-right: auto;" />`;
+          // ▲▲▲ 画像のインラインスタイル調整 ▲▲▲
         }
         tooltipContent += `</div>`;
 
         if ((loc.showLabel ?? true) && ((loc.name && loc.name.trim() !== '') || loc.photoDataUrl)) {
           marker.bindTooltip(tooltipContent, {
-            permanent: true, // ★ 常時表示
-            direction: 'top',
-            offset: L.point(0, -15), // マーカーの上部に表示
-            className: 'custom-location-tooltip' // CSSでスタイル調整
-          }).openTooltip(); // ★ 初期表示
+            permanent: true,
+            direction: 'top', // または 'auto' も試す価値あり
+            offset: L.point(0, -15), // オフセットもフォントや全体のサイズによって調整
+            className: 'custom-location-tooltip'
+          }).openTooltip();
         }
         // ▲▲▲ 常時表示ツールチップ ▲▲▲
         markerRefs.current.push(marker);
