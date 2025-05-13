@@ -101,8 +101,3 @@ body {
   border-right-color: rgba(120, 136, 159, 0.6) !important;
 }
 
-/* src/app/globals.css に追記または既存のクラスを修正 */
-.leaflet-animated-marker-icon span { /* createAnimatedIcon の中の span を対象にする場合 */
-  display: inline-block; /* transform を有効にするため */
-  transition: transform 0.1s linear; /* 回転をスムーズにする (0.1秒で線形変化) */
-}
