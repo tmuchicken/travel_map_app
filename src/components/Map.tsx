@@ -54,7 +54,7 @@ const calculateControlPoint = (start: L.LatLng, end: L.LatLng): L.LatLng => {
 interface MapProps {
   center?: L.LatLngExpression;
   zoom?: number;
-  locations: LocationPoint[]; // photoDataUrl を含む LocationPoint を受け取る
+  locations: LocationPoint[];
   transportOptions: TransportOption[];
   isPlaying: boolean;
   currentSegmentIndex: number;
@@ -96,6 +96,7 @@ const Map: React.FC<MapProps> = ({
   const currentTileLayerRef = useRef<L.TileLayer | null>(null);
 
   const animateMarker = useCallback(() => {
+    // ... (変更なし) ...
     if (!animatedMarkerRef.current || currentAnimationSegmentCoordsRef.current.length < 2 || !mapInstanceRef.current || !animationStartTimeRef.current) {
       if (isPlaying) {
         onSegmentComplete();
@@ -137,6 +138,7 @@ const Map: React.FC<MapProps> = ({
   }, [onSegmentComplete, isPlaying]);
 
   useEffect(() => {
+    // ... (変更なし) ...
     if (mapRef.current && !mapInstanceRef.current) {
       mapInstanceRef.current = L.map(mapRef.current, { zoomControl: true }).setView(center, zoom);
       if (!osrmWarningDisplayed) {
@@ -164,12 +166,8 @@ const Map: React.FC<MapProps> = ({
         markerRefs.current.forEach(marker => {
           if (mapInstanceRef.current && mapInstanceRef.current.hasLayer(marker)) {
              try {
-                if (marker.getTooltip()) {
-                    marker.unbindTooltip();
-                }
-                if (marker.getPopup()){ // ★ ポップアップも解除する
-                    marker.unbindPopup();
-                }
+                if (marker.getTooltip()) marker.unbindTooltip();
+                if (marker.getPopup()) marker.unbindPopup();
                 mapInstanceRef.current.removeLayer(marker);
              } catch (_e) { console.warn("Error removing marker during cleanup:", _e); }
           }
@@ -191,6 +189,7 @@ const Map: React.FC<MapProps> = ({
   }, []);
 
   useEffect(() => {
+    // ... (タイルレイヤー変更ロジックは変更なし) ...
     if (!mapInstanceRef.current || !selectedTileLayer) {
       return;
     }
@@ -231,12 +230,8 @@ const Map: React.FC<MapProps> = ({
 
     markerRefs.current.forEach(marker => {
       if (mapInstanceRef.current && mapInstanceRef.current.hasLayer(marker)) {
-        if (marker.getTooltip()) {
-            marker.unbindTooltip();
-        }
-        if (marker.getPopup()){ // ★ ポップアップも解除
-            marker.unbindPopup();
-        }
+        if (marker.getTooltip()) marker.unbindTooltip();
+        if (marker.getPopup()) marker.unbindPopup();
         mapInstanceRef.current.removeLayer(marker);
       }
     });
@@ -251,36 +246,34 @@ const Map: React.FC<MapProps> = ({
       if (mapInstanceRef.current && typeof loc.lat === 'number' && typeof loc.lng === 'number') {
         const marker = L.marker([loc.lat, loc.lng]).addTo(mapInstanceRef.current);
 
-        // ★★★ ツールチップまたはポップアップに写真と地名を表示 ★★★
-        let content = `<div style="text-align: center;">`;
+        // ▼▼▼ 常時表示ツールチップに写真と地名を表示 ▼▼▼
+        let tooltipContent = `<div style="text-align: center; min-width: 50px;">`; // ツールチップ全体の最小幅など
         if (loc.name && loc.name.trim() !== '') {
-          content += `<strong>${loc.name}</strong>`;
+          const escapedName = loc.name.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+          tooltipContent += `<strong>${escapedName}</strong>`;
         }
         if (loc.photoDataUrl) {
-          // 地名と写真の間に改行を入れるなど、見た目を調整
-          if (loc.name && loc.name.trim() !== '') content += `<br/>`;
-          content += `<img src="${loc.photoDataUrl}" alt="思い出の写真" style="max-width: 100px; max-height: 100px; margin-top: 5px; border-radius: 4px;" />`;
+          if (loc.name && loc.name.trim() !== '') tooltipContent += `<br/>`;
+          // CSSクラス `.custom-location-tooltip img` でスタイル調整することを推奨
+          tooltipContent += `<img src="${loc.photoDataUrl}" alt="写真" style="max-width: 60px; max-height: 60px; margin-top: 4px; border-radius: 3px; display: block; margin-left: auto; margin-right: auto;" />`;
         }
-        content += `</div>`;
+        tooltipContent += `</div>`;
 
-        if ((loc.showLabel ?? true) && ( (loc.name && loc.name.trim() !== '') || loc.photoDataUrl) ) {
-          // 地名または写真がある場合のみツールチップ/ポップアップを設定
-          // 今回は、写真も表示するので、クリックで表示するポップアップの方が操作性が良いかもしれません。
-          // 常時表示のツールチップだと写真で地図が隠れすぎる可能性があるため。
-          // ここではポップアップで実装します。常時表示が良い場合は bindTooltip に戻してください。
-          marker.bindPopup(content, {
-            // permanent: true, // ポップアップは通常クリックで表示
-            // direction: 'top',
-            // offset: L.point(0, -15),
-            // className: 'custom-location-tooltip' // ポップアップ用のクラスを別途定義しても良い
-          });
-          // .openTooltip(); // ポップアップは通常自動で開かない
+        if ((loc.showLabel ?? true) && ((loc.name && loc.name.trim() !== '') || loc.photoDataUrl)) {
+          marker.bindTooltip(tooltipContent, {
+            permanent: true, // ★ 常時表示
+            direction: 'top',
+            offset: L.point(0, -15), // マーカーの上部に表示
+            className: 'custom-location-tooltip' // CSSでスタイル調整
+          }).openTooltip(); // ★ 初期表示
         }
+        // ▲▲▲ 常時表示ツールチップ ▲▲▲
         markerRefs.current.push(marker);
       }
     });
 
     if (validLocations.length < 2) {
+      // ... (変更なし) ...
       layerRefs.current.forEach(layer => {
         if (mapInstanceRef.current && mapInstanceRef.current.hasLayer(layer)) {
           mapInstanceRef.current.removeLayer(layer);
@@ -291,7 +284,7 @@ const Map: React.FC<MapProps> = ({
     }
 
     const routePromises = validLocations.map((startPoint, i) => {
-      // ... (経路検索ロジックは変更なし)
+      // ... (経路検索ロジックは変更なし) ...
       if (i >= validLocations.length - 1) return Promise.resolve();
       const endPoint = validLocations[i + 1];
       const transportMode = startPoint.transport;
@@ -419,7 +412,7 @@ const Map: React.FC<MapProps> = ({
   }, [locations, transportOptions, onRoutingError]);
 
   useEffect(() => {
-    // ... (アニメーションロジックは変更なし)
+    // ... (アニメーションロジックは変更なし) ...
     if (!mapInstanceRef.current) return;
     const validLocations = locations.filter(loc => typeof loc.lat === 'number' && typeof loc.lng === 'number');
     if (isPlaying && currentSegmentIndex < validLocations.length - 1 && validLocations.length > 0) {
@@ -467,7 +460,7 @@ const Map: React.FC<MapProps> = ({
   }, [isPlaying, currentSegmentIndex, locations, transportOptions, segmentDurationSeconds, onSegmentComplete, animateMarker]);
 
   useEffect(() => {
-    // ... (ピン刺しモードロジックは変更なし)
+    // ... (ピン刺しモードロジックは変更なし) ...
     if (!mapInstanceRef.current) return;
     const map = mapInstanceRef.current;
     const handleMapClickWithLatLng = (e_click: L.LeafletMouseEvent) => {

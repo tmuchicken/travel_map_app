@@ -26,27 +26,46 @@ body {
   color: var(--foreground);
 }
 
-/* --- ▼▼▼ 追加 ▼▼▼ --- */
-/* Leafletの常時表示ツールチップ用のカスタムスタイル */
+/* src/app/globals.css */
+/* ... (既存のスタイル) ... */
+
 .custom-location-tooltip {
-  background-color: rgba(255, 255, 255, 0.9) !important; /* 背景を少し不透明に */
-  border: 1px solid rgba(0, 0, 0, 0.2) !important;    /* 境界線 */
-  border-radius: 4px !important;                       /* 角丸 */
-  padding: 4px 8px !important;                         /* 内側余白 */
-  font-size: 0.875rem !important;                      /* 文字サイズ (Tailwindのtext-sm相当) */
-  color: #333 !important;                             /* 文字色 (ライトモード時) */
-  box-shadow: 0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24); /* 軽い影 */
-  white-space: nowrap; /* 地名が長い場合に折り返さない */
+  background-color: rgba(255, 255, 255, 0.9) !important;
+  border: 1px solid rgba(0, 0, 0, 0.2) !important;
+  border-radius: 4px !important;
+  padding: 5px 8px !important; /* 少しパディングを増やす */
+  font-size: 0.8rem !important; /* 地名の文字サイズ */
+  color: #333 !important;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24);
+  /* white-space: nowrap; は写真も含む場合は折り返しが必要になるので削除または調整 */
+  max-width: 150px; /* ツールチップ全体の最大幅 (写真のサイズに応じて調整) */
 }
 
-/* ダークモード時のツールチップスタイル */
 .dark .custom-location-tooltip {
-  background-color: rgba(55, 65, 81, 0.9) !important;  /* ダークモードの背景 (Tailwindのslate-700に似た色) */
-  border-color: rgba(100, 116, 139, 0.5) !important; /* ダークモードの境界線 (Tailwindのslate-500に似た色) */
-  color: #f3f4f6 !important;                          /* ダークモードの文字色 (Tailwindのgray-100相当) */
-  box-shadow: 0 1px 3px rgba(0,0,0,0.3), 0 1px 2px rgba(0,0,0,0.4); /* ダークモード用の影 */
+  background-color: rgba(55, 65, 81, 0.9) !important;
+  border-color: rgba(100, 116, 139, 0.5) !important;
+  color: #f3f4f6 !important;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.3), 0 1px 2px rgba(0,0,0,0.4);
 }
 
+/* ツールチップ内の画像スタイル */
+.custom-location-tooltip img {
+  max-width: 70px;  /* ツールチップ内での写真の最大幅を調整 */
+  max-height: 70px; /* ツールチップ内での写真の最大高さを調整 */
+  margin-top: 4px;
+  border-radius: 3px;
+  display: block;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.custom-location-tooltip strong {
+  display: block; /* 地名をブロック要素に */
+  text-align: center;
+  margin-bottom: 2px; /* 地名と写真の間のスペース */
+}
+
+/* ... (既存の吹き出し矢印のスタイル) ... */
 /* Leafletツールチップの吹き出しの矢印の色も調整 (任意) */
 .leaflet-tooltip-top:before {
   border-top-color: rgba(0, 0, 0, 0.2) !important;
