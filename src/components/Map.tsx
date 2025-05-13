@@ -19,14 +19,16 @@ if (typeof window !== 'undefined') {
   });
 }
 
-const createAnimatedIcon = (transportLabel: string, rotation: number = 0) => {
+// ▼▼▼ アイコン回転ロジックを削除し、元のシンプルな形に戻す ▼▼▼
+const createAnimatedIcon = (transportLabel: string) => {
   return L.divIcon({
-    html: `<span style="font-size: 24px; display: inline-block; transform: rotate(${rotation}deg);">${transportLabel}</span>`,
+    html: `<span style="font-size: 24px;">${transportLabel}</span>`,
     className: 'leaflet-animated-marker-icon',
     iconSize: [30, 30],
     iconAnchor: [15, 15],
   });
 };
+// ▲▲▲ ここまで修正 ▲▲▲
 
 const getBezierCurveCoordinates = (start: L.LatLng, end: L.LatLng, control: L.LatLng, numPoints: number = 50): L.LatLng[] => {
     const points: L.LatLng[] = [];
@@ -111,15 +113,18 @@ const Map: React.FC<MapProps> = ({
         !animationStartTimeRef.current) {
       return;
     }
+
     const marker = animatedMarkerRef.current;
     const routeCoords = currentAnimationSegmentCoordsRef.current;
     const elapsedTime = Date.now() - animationStartTimeRef.current;
     const totalDuration = currentSegmentTotalDurationRef.current;
     const progress = Math.min(elapsedTime / totalDuration, 1);
+
     const targetIndexFloat = progress * (routeCoords.length - 1);
     const baseIndex = Math.floor(targetIndexFloat);
     const nextIndex = Math.min(baseIndex + 1, routeCoords.length - 1);
     const segmentProgress = targetIndexFloat - baseIndex;
+
     const currentPos = routeCoords[baseIndex];
     const nextPos = routeCoords[nextIndex];
 
@@ -129,36 +134,18 @@ const Map: React.FC<MapProps> = ({
       const interpolatedLatLng = L.latLng(lat, lng);
       marker.setLatLng(interpolatedLatLng);
 
-      let angle = 0;
-      if (baseIndex < routeCoords.length -1 ) {
-        const nextPointForAngle = routeCoords[nextIndex];
-        const dy_angle = nextPointForAngle.lat - interpolatedLatLng.lat;
-        const dx_angle = nextPointForAngle.lng - interpolatedLatLng.lng;
-        angle = Math.atan2(dy_angle, dx_angle) * 180 / Math.PI;
-        const currentTransport = locations[currentSegmentIndex]?.transport;
-        if (currentTransport === 'Plane' || currentTransport === 'Car' || currentTransport === 'Bus' || currentTransport === 'Train' || currentTransport === 'Ship') {
-            angle -= 90;
-        }
-      } else if (routeCoords.length > 1) {
-        const prevPointForAngle = routeCoords[routeCoords.length - 2];
-        const dy_angle = interpolatedLatLng.lat - prevPointForAngle.lat;
-        const dx_angle = interpolatedLatLng.lng - prevPointForAngle.lng;
-        angle = Math.atan2(dy_angle, dx_angle) * 180 / Math.PI;
-        const currentTransport = locations[currentSegmentIndex]?.transport;
-        if (currentTransport === 'Plane' || currentTransport === 'Car' || currentTransport === 'Bus' || currentTransport === 'Train' || currentTransport === 'Ship') {
-            angle -= 90;
-        }
-      }
-      const iconElement = marker.getElement();
-      if (iconElement) {
-        const existingTransform = iconElement.style.transform;
-        const otherTransforms = existingTransform.replace(/rotate\([^)]*\)/g, '').trim();
-        iconElement.style.transform = `${otherTransforms} rotate(${angle}deg)`.trim();
-      }
+      // ▼▼▼ アイコンの回転ロジックを削除 ▼▼▼
+      // const iconElement = marker.getElement();
+      // if (iconElement) {
+      //   // ... (回転処理) ...
+      // }
+      // ▲▲▲ アイコンの回転ロジックを削除 ▲▲▲
+
       if (mapInstanceRef.current && !mapInstanceRef.current.getBounds().contains(interpolatedLatLng)) {
         mapInstanceRef.current.panTo(interpolatedLatLng);
       }
     }
+
     if (progress < 1) {
       animationFrameIdRef.current = requestAnimationFrame(animateMarker);
     } else {
@@ -171,7 +158,9 @@ const Map: React.FC<MapProps> = ({
       }
       onSegmentComplete();
     }
-  }, [onSegmentComplete, locations, currentSegmentIndex]);
+  // ▼▼▼ 依存配列から locations, currentSegmentIndex を削除 (回転ロジック削除に伴い不要に) ▼▼▼
+  }, [onSegmentComplete]);
+  // ▲▲▲ ここまで修正 ▲▲▲
 
   useEffect(() => {
     if (mapRef.current && !mapInstanceRef.current) {
@@ -215,7 +204,7 @@ const Map: React.FC<MapProps> = ({
       }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [center, zoom, onRoutingError]); // osrmWarningDisplayed は初回のみなので依存配列から外しても良い
+  }, [center, zoom, onRoutingError]);
 
   useEffect(() => {
     if (!mapInstanceRef.current || !selectedTileLayer) return;
@@ -233,65 +222,54 @@ const Map: React.FC<MapProps> = ({
     currentTileLayerRef.current = newLayer;
   }, [selectedTileLayer, onRoutingError]);
 
-  // 経路描画 及び 静的マーカーとツールチップの表示
   useEffect(() => {
     if (!mapInstanceRef.current) return;
     routeCalculationGenerationRef.current++;
     const currentGeneration = routeCalculationGenerationRef.current;
-
     activeRoutingControls.current.forEach(control => {
       if (mapInstanceRef.current) try { mapInstanceRef.current.removeControl(control); } catch(_e){ console.warn("Error removing old active routing control:", _e); }
     });
     activeRoutingControls.current = [];
-
     layerRefs.current.forEach(layer => {
       if (mapInstanceRef.current && mapInstanceRef.current.hasLayer(layer)) mapInstanceRef.current.removeLayer(layer);
     });
     layerRefs.current = [];
-
     markerRefs.current.forEach(marker => {
       if (mapInstanceRef.current && mapInstanceRef.current.hasLayer(marker)) {
-        if (marker.getTooltip()) marker.unbindTooltip(); // ツールチップ解除
-        if (marker.getPopup()) marker.unbindPopup();     // ポップアップ解除
+        if (marker.getTooltip()) marker.unbindTooltip();
+        if (marker.getPopup()) marker.unbindPopup();
         mapInstanceRef.current.removeLayer(marker);
       }
     });
     markerRefs.current = [];
     allSegmentsRouteCoordsRef.current = {};
-
     const validLocations = locations.filter(
       loc => typeof loc.lat === 'number' && typeof loc.lng === 'number' && !isNaN(loc.lat) && !isNaN(loc.lng)
     );
-
     validLocations.forEach(loc => {
       if (mapInstanceRef.current && typeof loc.lat === 'number' && typeof loc.lng === 'number') {
         const marker = L.marker([loc.lat, loc.lng]).addTo(mapInstanceRef.current);
-
-        // ▼▼▼ 常時表示ツールチップに写真と地名を表示するロジックを再適用 ▼▼▼
-        let tooltipContent = `<div style="text-align: center; min-width: 75px;">`;
+        let tooltipContent = `<div style="text-align: center; min-width: 75px;">`; // ツールチップコンテンツ
         if (loc.name && loc.name.trim() !== '') {
           const escapedName = loc.name.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
           tooltipContent += `<strong>${escapedName}</strong>`;
         }
         if (loc.photoDataUrl) {
-          if (loc.name && loc.name.trim() !== '') tooltipContent += `<br style="margin-bottom: 2px;" />`; // 地名と写真の間のスペース調整
+          if (loc.name && loc.name.trim() !== '') tooltipContent += `<br style="margin-bottom: 2px;" />`;
           tooltipContent += `<img src="${loc.photoDataUrl}" alt="写真" style="max-width: 90px; max-height: 90px; margin-top: 2px; border-radius: 3px; display: block; margin-left: auto; margin-right: auto;" />`;
         }
         tooltipContent += `</div>`;
-
         if ((loc.showLabel ?? true) && ((loc.name && loc.name.trim() !== '') || loc.photoDataUrl)) {
-          marker.bindTooltip(tooltipContent, {
-            permanent: true, // ★ 常時表示
+          marker.bindTooltip(tooltipContent, { // ★ bindTooltip を使用
+            permanent: true,
             direction: 'top',
-            offset: L.point(0, -15), // マーカーの上部に表示
-            className: 'custom-location-tooltip' // CSSでスタイル調整
-          }).openTooltip(); // ★ 初期表示
+            offset: L.point(0, -15),
+            className: 'custom-location-tooltip'
+          }).openTooltip(); // ★ openTooltip() を呼び出し
         }
-        // ▲▲▲ 常時表示ツールチップ ▲▲▲
         markerRefs.current.push(marker);
       }
     });
-
     if (validLocations.length < 2) {
       layerRefs.current.forEach(layer => {
         if (mapInstanceRef.current && mapInstanceRef.current.hasLayer(layer)) mapInstanceRef.current.removeLayer(layer);
@@ -368,9 +346,8 @@ const Map: React.FC<MapProps> = ({
     });
   }, [locations, transportOptions, onRoutingError]);
 
-  // アニメーション状態の制御 useEffect (変更なし)
+  // アニメーション状態の制御 useEffect
   useEffect(() => {
-    // ... (以前提示した animationPhase に基づくアニメーション制御ロジック) ...
     if (!mapInstanceRef.current) return;
     const validLocations = locations.filter(loc => typeof loc.lat === 'number' && typeof loc.lng === 'number');
     if (animationPhase === 'stopped') {
@@ -388,27 +365,17 @@ const Map: React.FC<MapProps> = ({
         const transportOption = transportOptions.find(opt => opt.name === firstPoint.transport);
         if (transportOption && typeof firstPoint.lat === 'number' && typeof firstPoint.lng === 'number') {
           const startLatLng = L.latLng(firstPoint.lat, firstPoint.lng);
-          let initialAngle = 0;
-          if(validLocations.length > 1) {
-            const nextPoint = validLocations[1];
-            if(typeof nextPoint.lat === 'number' && typeof nextPoint.lng === 'number'){
-                const dy = nextPoint.lat - startLatLng.lat;
-                const dx = nextPoint.lng - startLatLng.lng;
-                initialAngle = Math.atan2(dy, dx) * 180 / Math.PI;
-                 if (firstPoint.transport === 'Plane' || firstPoint.transport === 'Car' || firstPoint.transport === 'Bus' || firstPoint.transport === 'Train' || firstPoint.transport === 'Ship') {
-                    initialAngle -= 90;
-                }
-            }
-          }
+          // ▼▼▼ アイコン回転ロジックを削除し、createAnimatedIcon から回転引数を削除 ▼▼▼
           if (!animatedMarkerRef.current) {
             animatedMarkerRef.current = L.marker(startLatLng, {
-              icon: createAnimatedIcon(transportOption.label, initialAngle),
+              icon: createAnimatedIcon(transportOption.label),
               zIndexOffset: 1000
             }).addTo(mapInstanceRef.current);
           } else {
             animatedMarkerRef.current.setLatLng(startLatLng);
-            animatedMarkerRef.current.setIcon(createAnimatedIcon(transportOption.label, initialAngle));
+            animatedMarkerRef.current.setIcon(createAnimatedIcon(transportOption.label));
           }
+          // ▲▲▲ ここまで修正 ▲▲▲
            if (mapInstanceRef.current && !mapInstanceRef.current.getBounds().contains(startLatLng)) {
             mapInstanceRef.current.panTo(startLatLng);
           }
@@ -423,21 +390,17 @@ const Map: React.FC<MapProps> = ({
         if (transportOption && typeof segmentStartPoint.lat === 'number' && typeof segmentStartPoint.lng === 'number' &&
             coordsForCurrentSegment.length > 0 && mapInstanceRef.current) {
             const startLatLng = coordsForCurrentSegment[0];
-            let currentAngle = 0;
-            if(animatedMarkerRef.current && animatedMarkerRef.current.getElement()){
-                const transformStyle = animatedMarkerRef.current.getElement()?.style.transform;
-                const rotateMatch = transformStyle?.match(/rotate\(([^deg)]+)deg\)/);
-                if(rotateMatch && rotateMatch[1]) currentAngle = parseFloat(rotateMatch[1]);
-            }
+            // ▼▼▼ アイコン回転ロジックを削除し、createAnimatedIcon から回転引数を削除 ▼▼▼
             if (!animatedMarkerRef.current) {
                 animatedMarkerRef.current = L.marker(startLatLng, {
-                    icon: createAnimatedIcon(transportOption.label, currentAngle),
+                    icon: createAnimatedIcon(transportOption.label),
                     zIndexOffset: 1000
                 }).addTo(mapInstanceRef.current);
             } else {
                 animatedMarkerRef.current.setLatLng(startLatLng);
-                animatedMarkerRef.current.setIcon(createAnimatedIcon(transportOption.label, currentAngle));
+                animatedMarkerRef.current.setIcon(createAnimatedIcon(transportOption.label));
             }
+            // ▲▲▲ ここまで修正 ▲▲▲
             const durationMs = (segmentDurationSeconds > 0) ? segmentDurationSeconds * 1000 : 5000;
             currentSegmentTotalDurationRef.current = durationMs;
             animationStartTimeRef.current = Date.now();
