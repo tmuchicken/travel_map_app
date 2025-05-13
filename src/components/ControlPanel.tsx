@@ -1,6 +1,6 @@
 // src/components/ControlPanel.tsx
 import React from 'react';
-import { Plus, Save, FolderOpen, Loader2, Trash2, MapPin, Eye, EyeOff } from 'lucide-react';
+import { Plus, Save, FolderOpen, Loader2, Trash2, MapPin, Eye, EyeOff, ImagePlus, XCircle } from 'lucide-react';
 import type { LocationPoint, TransportOption } from '@/app/page';
 
 interface ControlPanelProps {
@@ -19,6 +19,8 @@ interface ControlPanelProps {
   onSelectFromMap: (locationId: string) => void;
   onGenerateRoute: () => void;
   onToggleLocationLabel: (id: string) => void;
+  onPhotoChange: (locationId: string, file: File | null) => void;
+  onRemovePhoto: (locationId: string) => void;
 }
 
 interface LocationInputGroupProps {
@@ -31,6 +33,9 @@ interface LocationInputGroupProps {
   onRemoveClick?: () => void;
   onSelectFromMapClick: () => void;
   onToggleLabelClick: () => void;
+  onPhotoInputChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
+  onPhotoRemoveClick: () => void;
+  photoInputId: string;
 }
 
 const LocationInputGroup: React.FC<LocationInputGroupProps> = ({
@@ -43,17 +48,14 @@ const LocationInputGroup: React.FC<LocationInputGroupProps> = ({
   onRemoveClick,
   onSelectFromMapClick,
   onToggleLabelClick,
+  onPhotoInputChange,
+  onPhotoRemoveClick,
+  photoInputId,
 }) => {
-  // getPointLabel 関数は削除されました
-
   return (
     <div className="mb-3">
       <div className="flex justify-between items-center mb-1">
-        {/* ラベルは ControlPanel 側で別途表示するため、ここでは空にするか、
-            もし LocationInputGroup 内部でラベルが必要なら、別途 label prop を渡す */}
-        <div className="flex-grow"> {/* ラベルが占めるスペースがなくなるので調整が必要な場合 */}
-             {/* <label htmlFor={`${point.id}-input`} className="block text-sm font-semibold text-gray-700 dark:text-gray-300"></label> */}
-        </div>
+        <div className="flex-grow"></div>
         <button
           onClick={onToggleLabelClick}
           title={(point.showLabel ?? true) ? "この地点の地名を非表示" : "この地点の地名を表示"}
@@ -62,7 +64,7 @@ const LocationInputGroup: React.FC<LocationInputGroupProps> = ({
           {(point.showLabel ?? true) ? <Eye size={18} /> : <EyeOff size={18} />}
         </button>
       </div>
-      <div className="flex space-x-2 items-start">
+      <div className="flex space-x-2 items-start mb-2">
         <input
           type="text"
           id={`${point.id}-input`}
@@ -103,6 +105,39 @@ const LocationInputGroup: React.FC<LocationInputGroupProps> = ({
         )}
       </div>
       {point.error && <p className="mt-1 text-xs text-red-600">{point.error}</p>}
+
+      <div className="mt-2 flex items-center space-x-2">
+        <label
+          htmlFor={photoInputId}
+          className="cursor-pointer inline-flex items-center px-3 py-1.5 border border-slate-400 dark:border-slate-600 text-xs font-medium rounded-md text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
+        >
+          <ImagePlus size={14} className="mr-1.5" />
+          写真を追加/変更
+        </label>
+        <input
+          id={photoInputId}
+          type="file"
+          accept="image/png, image/jpeg, image/gif, image/webp"
+          className="hidden"
+          onChange={onPhotoInputChange}
+        />
+        {point.photoDataUrl && (
+          <div className="flex items-center space-x-1">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={point.photoDataUrl} alt="思い出の写真プレビュー" className="h-10 w-10 object-cover rounded border border-slate-300 dark:border-slate-600" />
+            <button
+              onClick={onPhotoRemoveClick}
+              className="p-1 text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 rounded-full focus:outline-none focus:ring-1 focus:ring-red-500"
+              title="写真を削除"
+            >
+              <XCircle size={18} />
+            </button>
+          </div>
+        )}
+      </div>
+      <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+        ※写真はブラウザを閉じると消えます。最大2MBまで。
+      </p>
     </div>
   );
 };
@@ -148,10 +183,12 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
   onSelectFromMap,
   onGenerateRoute,
   onToggleLocationLabel,
+  onPhotoChange,
+  onRemovePhoto,
 }) => {
-  const startPoint = locations.find(loc => loc.id === 'start'); // ! を削除 (存在しない可能性も考慮)
+  const startPoint = locations.find(loc => loc.id === 'start');
   const waypoints = locations.filter(loc => loc.id.startsWith('waypoint'));
-  const endPoint = locations.find(loc => loc.id === 'end'); // ! を削除
+  const endPoint = locations.find(loc => loc.id === 'end');
 
   const getPointLabelText = (point: LocationPoint, index?: number): string => {
     if (point.id === 'start') return '出発地';
@@ -180,6 +217,9 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
               onSearchClick={() => onGeocodeLocation(startPoint.id, startPoint.name)}
               onSelectFromMapClick={() => onSelectFromMap(startPoint.id)}
               onToggleLabelClick={() => onToggleLocationLabel(startPoint.id)}
+              onPhotoInputChange={(e) => onPhotoChange(startPoint.id, e.target.files ? e.target.files[0] : null)}
+              onPhotoRemoveClick={() => onRemovePhoto(startPoint.id)}
+              photoInputId={`photo-input-${startPoint.id}`}
             />
             <TransportSelection
               selectedTransport={startPoint.transport}
@@ -204,6 +244,9 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
               onRemoveClick={() => onRemoveWaypoint(waypoint.id)}
               onSelectFromMapClick={() => onSelectFromMap(waypoint.id)}
               onToggleLabelClick={() => onToggleLocationLabel(waypoint.id)}
+              onPhotoInputChange={(e) => onPhotoChange(waypoint.id, e.target.files ? e.target.files[0] : null)}
+              onPhotoRemoveClick={() => onRemovePhoto(waypoint.id)}
+              photoInputId={`photo-input-${waypoint.id}`}
             />
             <TransportSelection
               selectedTransport={waypoint.transport}
@@ -226,6 +269,9 @@ const ControlPanel: React.FC<ControlPanelProps> = ({
               onSearchClick={() => onGeocodeLocation(endPoint.id, endPoint.name)}
               onSelectFromMapClick={() => onSelectFromMap(endPoint.id)}
               onToggleLabelClick={() => onToggleLocationLabel(endPoint.id)}
+              onPhotoInputChange={(e) => onPhotoChange(endPoint.id, e.target.files ? e.target.files[0] : null)}
+              onPhotoRemoveClick={() => onRemovePhoto(endPoint.id)}
+              photoInputId={`photo-input-${endPoint.id}`}
             />
           </div>
         )}

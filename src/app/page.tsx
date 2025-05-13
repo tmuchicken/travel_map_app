@@ -16,7 +16,8 @@ export interface LocationPoint {
   lat?: number;
   lng?: number;
   error?: string;
-  showLabel?: boolean; // ★ 地名ラベルの表示/非表示フラグ
+  showLabel?: boolean;
+  photoDataUrl?: string | null;
 }
 
 export interface TransportOption {
@@ -29,7 +30,6 @@ const MapWithNoSSR = dynamic(() => import('@/components/Map'), {
   loading: () => <div className="flex justify-center items-center h-full bg-gray-200 dark:bg-gray-700"><p className="text-slate-700 dark:text-slate-200">地図を読み込み中です...</p></div>,
 });
 
-// --- HomePage Component ---
 export default function HomePage() {
   const initialTransportOptions: TransportOption[] = useMemo(() => [
     { name: 'Car', label: '🚗' },
@@ -41,8 +41,8 @@ export default function HomePage() {
   ], []);
 
   const [locations, setLocations] = useState<LocationPoint[]>([
-    { id: 'start', name: '東京タワー', transport: initialTransportOptions[0].name, lat: 35.6585805, lng: 139.7454329, showLabel: true }, // ★ showLabel 初期値
-    { id: 'end', name: '大阪城', transport: initialTransportOptions[0].name, lat: 34.6873153, lng: 135.5259603, showLabel: true }, // ★ showLabel 初期値
+    { id: 'start', name: '東京タワー', transport: initialTransportOptions[0].name, lat: 35.6585805, lng: 139.7454329, showLabel: true, photoDataUrl: null },
+    { id: 'end', name: '大阪城', transport: initialTransportOptions[0].name, lat: 34.6873153, lng: 135.5259603, showLabel: true, photoDataUrl: null },
   ]);
 
   const [geocodingState, setGeocodingState] = useState<Record<string, 'idle' | 'loading' | 'error'>>({});
@@ -52,7 +52,6 @@ export default function HomePage() {
   const [mapError, setMapError] = useState<string | null>(null);
   const [pickingLocationId, setPickingLocationId] = useState<string | null>(null);
   const [selectedTileLayerId, setSelectedTileLayerId] = useState<string>(availableTileLayers[0].id);
-
 
   useEffect(() => {
     setIsPlaying(false);
@@ -77,7 +76,7 @@ export default function HomePage() {
     setLocations(prevLocations => {
       const endIndex = prevLocations.findIndex(loc => loc.id === 'end');
       const newLocations = [...prevLocations];
-      newLocations.splice(endIndex, 0, { id: newWaypointId, name: '', transport: initialTransportOptions[0].name, showLabel: true }); // ★ showLabel 初期値
+      newLocations.splice(endIndex, 0, { id: newWaypointId, name: '', transport: initialTransportOptions[0].name, showLabel: true, photoDataUrl: null });
       return newLocations;
     });
   }, [initialTransportOptions]);
@@ -179,7 +178,14 @@ export default function HomePage() {
         return;
     }
     try {
-      const projectData = JSON.stringify({ locations, segmentDurationSeconds, selectedTileLayerId });
+      // ★★★ 修正箇所 ★★★
+      const locationsToSave = locations.map(loc => {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { photoDataUrl, ...rest } = loc; // photoDataUrl を分割代入で取り除くが、変数は使わない
+        return rest;
+      });
+      // ★★★ ここまで ★★★
+      const projectData = JSON.stringify({ locations: locationsToSave, segmentDurationSeconds, selectedTileLayerId });
       localStorage.setItem('travelRouteProject', projectData);
       alert("プロジェクトを保存しました。");
     } catch (error) {
@@ -199,9 +205,10 @@ export default function HomePage() {
       if (savedData) {
         const projectData = JSON.parse(savedData);
         if (projectData.locations) {
-            const loadedLocations = projectData.locations.map((loc: LocationPoint) => ({
+            const loadedLocations = projectData.locations.map((loc: Omit<LocationPoint, 'photoDataUrl'>) => ({
                 ...loc,
-                showLabel: loc.showLabel === undefined ? true : loc.showLabel, // ★ 読み込み時に showLabel がなければtrueに
+                showLabel: loc.showLabel === undefined ? true : loc.showLabel,
+                photoDataUrl: null,
             }));
             setLocations(loadedLocations);
         }
@@ -288,12 +295,10 @@ export default function HomePage() {
     console.warn("Map Routing Error:", message);
   }, [pickingLocationId]);
 
-
   const getPickingLocationLabel = useCallback((id: string | null, locs: LocationPoint[]): string => {
     if (!id) return '';
     const loc = locs.find(l => l.id === id);
     if (loc && loc.name && loc.name.trim() !== '' ) return loc.name;
-
     if (id === 'start') return '出発地';
     if (id === 'end') return '目的地';
     if (id.startsWith('waypoint')) {
@@ -303,7 +308,6 @@ export default function HomePage() {
     }
     return loc?.name || id;
   }, []);
-
 
   const handleSelectLocationFromMap = useCallback((locationId: string) => {
     if (isPlaying) {
@@ -323,9 +327,8 @@ export default function HomePage() {
     }
   }, [isPlaying, pickingLocationId, locations, getPickingLocationLabel]);
 
-
-  const handleMapClickForPicking = useCallback((latlng: L.LatLng | null) => {
-    if (latlng && pickingLocationId !== null) {
+  const handleMapClickForPicking = useCallback((latlng: L.LatLng) => {
+    if (pickingLocationId !== null) {
       handleReverseGeocodeLocation(pickingLocationId, latlng);
     }
   }, [pickingLocationId, handleReverseGeocodeLocation]);
@@ -346,13 +349,56 @@ export default function HomePage() {
     setSelectedTileLayerId(newTileLayerId);
   }, []);
 
-  // ★ 新しいハンドラ: 地点ラベルの表示/非表示を切り替え
   const handleToggleLocationLabel = useCallback((id: string) => {
     setLocations(prevLocations =>
       prevLocations.map(loc =>
-        loc.id === id ? { ...loc, showLabel: !(loc.showLabel ?? true) } : loc // showLabelが未定義ならtrueとして扱う
+        loc.id === id ? { ...loc, showLabel: !(loc.showLabel ?? true) } : loc
       )
     );
+  }, []);
+
+  const handlePhotoChange = useCallback((locationId: string, file: File | null) => {
+    if (file) {
+      if (file.size > 2 * 1024 * 1024) {
+        setMapError(`画像ファイルサイズが大きすぎます (最大2MB)。地点「${locations.find(l=>l.id===locationId)?.name || locationId}」`);
+        const fileInput = document.getElementById(`photo-input-${locationId}`) as HTMLInputElement;
+        if (fileInput) fileInput.value = "";
+        return;
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setLocations(prevLocations =>
+          prevLocations.map(loc =>
+            loc.id === locationId ? { ...loc, photoDataUrl: reader.result as string } : loc
+          )
+        );
+        setMapError(null);
+      };
+      reader.onerror = () => {
+        setMapError(`写真の読み込みに失敗しました。地点「${locations.find(l=>l.id===locationId)?.name || locationId}」`);
+        const fileInput = document.getElementById(`photo-input-${locationId}`) as HTMLInputElement;
+        if (fileInput) fileInput.value = "";
+      };
+      reader.readAsDataURL(file);
+    } else {
+      setLocations(prevLocations =>
+        prevLocations.map(loc =>
+          loc.id === locationId ? { ...loc, photoDataUrl: null } : loc
+        )
+      );
+    }
+  }, [locations]);
+
+  const handleRemovePhoto = useCallback((locationId: string) => {
+    setLocations(prevLocations =>
+      prevLocations.map(loc =>
+        loc.id === locationId ? { ...loc, photoDataUrl: null } : loc
+      )
+    );
+    const fileInput = document.getElementById(`photo-input-${locationId}`) as HTMLInputElement;
+    if (fileInput) {
+      fileInput.value = "";
+    }
   }, []);
 
   return (
@@ -379,7 +425,9 @@ export default function HomePage() {
             onLoadProject={handleLoadProject}
             onSelectFromMap={handleSelectLocationFromMap}
             onGenerateRoute={handleGenerateRoute}
-            onToggleLocationLabel={handleToggleLocationLabel} // ★ propsとして渡す
+            onToggleLocationLabel={handleToggleLocationLabel}
+            onPhotoChange={handlePhotoChange}
+            onRemovePhoto={handleRemovePhoto}
           />
         </div>
         <div className="flex-1 flex flex-col gap-2 md:gap-4">
@@ -405,7 +453,7 @@ export default function HomePage() {
                 className="absolute top-0 bottom-0 right-0 px-3 py-2 text-red-500 dark:text-red-400 hover:text-red-700 dark:hover:text-red-200"
                 aria-label="閉じる"
               >
-                <svg className="fill-current h-5 w-5" role="button" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><title>閉じる</title><path d="M14.348 14.849a1.2 1.2 0 0 1-1.697 0L10 11.819l-2.651 3.029a1.2 1.2 0 1 1-1.697-1.697l2.758-3.15-2.759-3.152a1.2 1.2 0 1 1 1.697-1.697L10 8.183l2.651-3.031a1.2 1.2 0 1 1 1.697-1.697l-2.758 3.152 2.758 3.15a1.2 1.2 0 0 1 0 1.698z"/></svg>
+                <svg className="fill-current h-5 w-5" role="button" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><title>閉じる</title><path d="M14.348 14.849a1.2 1.2 0 0 1-1.697 0L10 11.819l-2.651 3.029a1.2 1.2 0 1 1-1.697-1.697l2.758-3.15-2.759-3.152a1.2 1.2 0 1 1 1.697-1.697L10 8.183l2.651-3.031a1.2 1.2 0 1 1 1.697 1.697l-2.758 3.152 2.758 3.15a1.2 1.2 0 0 1 0 1.698z"/></svg>
               </button>
             </div>
           )}
