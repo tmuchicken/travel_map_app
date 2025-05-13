@@ -11,11 +11,12 @@ import { availableTileLayers } from '@/config/mapLayers';
 
 export interface LocationPoint {
   id: string;
-  name: string; // この name をユーザーが編集できるようにし、ジオコーディング結果で更新する
+  name: string;
   transport: string;
   lat?: number;
   lng?: number;
   error?: string;
+  showLabel?: boolean; // ★ 地名ラベルの表示/非表示フラグ
 }
 
 export interface TransportOption {
@@ -40,8 +41,8 @@ export default function HomePage() {
   ], []);
 
   const [locations, setLocations] = useState<LocationPoint[]>([
-    { id: 'start', name: '東京タワー', transport: initialTransportOptions[0].name, lat: 35.6585805, lng: 139.7454329 },
-    { id: 'end', name: '大阪城', transport: initialTransportOptions[0].name, lat: 34.6873153, lng: 135.5259603 },
+    { id: 'start', name: '東京タワー', transport: initialTransportOptions[0].name, lat: 35.6585805, lng: 139.7454329, showLabel: true }, // ★ showLabel 初期値
+    { id: 'end', name: '大阪城', transport: initialTransportOptions[0].name, lat: 34.6873153, lng: 135.5259603, showLabel: true }, // ★ showLabel 初期値
   ]);
 
   const [geocodingState, setGeocodingState] = useState<Record<string, 'idle' | 'loading' | 'error'>>({});
@@ -58,13 +59,10 @@ export default function HomePage() {
     setCurrentSegmentIndex(0);
   }, [locations]);
 
-  // 地点名変更ハンドラ (ControlPanelから呼ばれる)
   const handleLocationNameChange = useCallback((id: string, newName: string) => {
     setLocations(prevLocations =>
-      prevLocations.map(loc => (loc.id === id ? { ...loc, name: newName, error: undefined } : loc)) // 編集時にエラーをクリアすることが多い
+      prevLocations.map(loc => (loc.id === id ? { ...loc, name: newName, error: undefined } : loc))
     );
-    // 地名変更時はジオコーディング状態をリセットしても良いが、座標は維持されるので必須ではない
-    // setGeocodingState(prev => ({...prev, [id]: 'idle'}));
     setMapError(null);
   }, []);
 
@@ -79,8 +77,7 @@ export default function HomePage() {
     setLocations(prevLocations => {
       const endIndex = prevLocations.findIndex(loc => loc.id === 'end');
       const newLocations = [...prevLocations];
-      // 新しい地点のnameは空文字で初期化。ユーザーが入力するか、検索/ピン刺しで設定される。
-      newLocations.splice(endIndex, 0, { id: newWaypointId, name: '', transport: initialTransportOptions[0].name });
+      newLocations.splice(endIndex, 0, { id: newWaypointId, name: '', transport: initialTransportOptions[0].name, showLabel: true }); // ★ showLabel 初期値
       return newLocations;
     });
   }, [initialTransportOptions]);
@@ -94,9 +91,7 @@ export default function HomePage() {
     });
   }, []);
 
-  // 地名からのジオコーディング (検索ボタン押下時)
   const handleGeocodeLocation = useCallback(async (locationId: string, locationNameFromInput: string) => {
-    // locationNameFromInput は ControlPanel の入力フィールドの現在の値
     if (!locationNameFromInput.trim()) {
       setLocations(prevLocations =>
         prevLocations.map(loc => (loc.id === locationId ? { ...loc, lat: undefined, lng: undefined, error: "地点名を入力してください。" } : loc))
@@ -115,15 +110,13 @@ export default function HomePage() {
         const { lat, lon, display_name } = data[0];
         setLocations(prevLocations =>
           prevLocations.map(loc =>
-            loc.id === locationId ? { ...loc, lat: parseFloat(lat), lng: parseFloat(lon), name: display_name, error: undefined } : loc
-            // ▲▲▲ 検索結果の display_name を name として設定。ユーザーはこの後ControlPanelで編集可能 ▲▲▲
+            loc.id === locationId ? { ...loc, lat: parseFloat(lat), lng: parseFloat(lon), name: display_name, error: undefined, showLabel: loc.showLabel === undefined ? true : loc.showLabel } : loc
           )
         );
         setGeocodingState(prev => ({...prev, [locationId]: 'idle'}));
       } else {
         setLocations(prevLocations =>
           prevLocations.map(loc => (loc.id === locationId ? { ...loc, lat: undefined, lng: undefined, error: '地点が見つかりません。検索ワードを変えてみてください。', name: locationNameFromInput } : loc))
-          // ▲▲▲ 見つからない場合も、入力された名前は維持する ▲▲▲
         );
         setGeocodingState(prev => ({...prev, [locationId]: 'error'}));
       }
@@ -131,22 +124,14 @@ export default function HomePage() {
       const errorMessage = error instanceof Error ? error.message : 'ジオコーディング中に不明なエラーが発生しました。';
       setLocations(prevLocations =>
         prevLocations.map(loc => (loc.id === locationId ? { ...loc, lat: undefined, lng: undefined, error: errorMessage, name: locationNameFromInput } : loc))
-        // ▲▲▲ エラー時も、入力された名前は維持する ▲▲▲
       );
       setGeocodingState(prev => ({...prev, [locationId]: 'error'}));
     }
   }, []);
 
-  // 地図クリックによる逆ジオコーディング
   const handleReverseGeocodeLocation = useCallback(async (locationId: string, latlng: L.LatLng) => {
     setGeocodingState(prev => ({...prev, [locationId]: 'loading'}));
     setMapError(null);
-    // ピン刺し時は、まずControlPanelの対応する地点のnameを空にするか、「検索中...」などにしても良い
-    // setLocations(prevLocations =>
-    //   prevLocations.map(loc =>
-    //     loc.id === locationId ? { ...loc, name: "座標から検索中...", lat: latlng.lat, lng: latlng.lng, error: undefined } : loc
-    //   )
-    // );
     try {
       const apiUrl = `https://nominatim.openstreetmap.org/reverse?lat=${latlng.lat}&lon=${latlng.lng}&format=jsonv2`;
       const response = await fetch(apiUrl, { headers: { 'User-Agent': 'TravelRouteAnimationApp/1.0 (user@example.com)' } });
@@ -156,12 +141,11 @@ export default function HomePage() {
       if (data && data.display_name) {
         newName = data.display_name;
       } else {
-        newName = `地点 (${latlng.lat.toFixed(4)}, ${latlng.lng.toFixed(4)})`; // 取得失敗時のデフォルト名
+        newName = `地点 (${latlng.lat.toFixed(4)}, ${latlng.lng.toFixed(4)})`;
       }
       setLocations(prevLocations =>
         prevLocations.map(loc =>
-          loc.id === locationId ? { ...loc, lat: latlng.lat, lng: latlng.lng, name: newName, error: undefined } : loc
-          // ▲▲▲ 逆ジオコーディング結果の地名を name として設定。ユーザーはこの後ControlPanelで編集可能 ▲▲▲
+          loc.id === locationId ? { ...loc, lat: latlng.lat, lng: latlng.lng, name: newName, error: undefined, showLabel: loc.showLabel === undefined ? true : loc.showLabel } : loc
         )
       );
       setGeocodingState(prev => ({...prev, [locationId]: 'idle'}));
@@ -170,11 +154,10 @@ export default function HomePage() {
       const fallbackName = `地点 (${latlng.lat.toFixed(4)}, ${latlng.lng.toFixed(4)})`;
        setLocations(prevLocations =>
           prevLocations.map(loc => (loc.id === locationId ? { ...loc, lat: latlng.lat, lng: latlng.lng, name: fallbackName, error: `逆ジオコーディングエラー: ${errorMessage}` } : loc))
-           // ▲▲▲ エラー時も、座標から生成した名前を設定 ▲▲▲
         );
       setGeocodingState(prev => ({...prev, [locationId]: 'error'}));
     } finally {
-        setPickingLocationId(null); // 地点選択モードを解除
+        setPickingLocationId(null);
     }
   }, []);
 
@@ -196,7 +179,6 @@ export default function HomePage() {
         return;
     }
     try {
-      // locations にはユーザー編集後の name が含まれている
       const projectData = JSON.stringify({ locations, segmentDurationSeconds, selectedTileLayerId });
       localStorage.setItem('travelRouteProject', projectData);
       alert("プロジェクトを保存しました。");
@@ -216,7 +198,13 @@ export default function HomePage() {
       const savedData = localStorage.getItem('travelRouteProject');
       if (savedData) {
         const projectData = JSON.parse(savedData);
-        if (projectData.locations) setLocations(projectData.locations); // 保存されたnameが復元される
+        if (projectData.locations) {
+            const loadedLocations = projectData.locations.map((loc: LocationPoint) => ({
+                ...loc,
+                showLabel: loc.showLabel === undefined ? true : loc.showLabel, // ★ 読み込み時に showLabel がなければtrueに
+            }));
+            setLocations(loadedLocations);
+        }
         if (typeof projectData.segmentDurationSeconds === 'number') {
             const duration = Math.max(1, Math.min(600, Math.round(projectData.segmentDurationSeconds)));
             setSegmentDurationSeconds(duration);
@@ -300,13 +288,12 @@ export default function HomePage() {
     console.warn("Map Routing Error:", message);
   }, [pickingLocationId]);
 
+
   const getPickingLocationLabel = useCallback((id: string | null, locs: LocationPoint[]): string => {
     if (!id) return '';
     const loc = locs.find(l => l.id === id);
-    // ユーザーが編集した名前があればそれを優先
     if (loc && loc.name && loc.name.trim() !== '' ) return loc.name;
 
-    // デフォルトの表示名生成ロジック
     if (id === 'start') return '出発地';
     if (id === 'end') return '目的地';
     if (id.startsWith('waypoint')) {
@@ -314,8 +301,9 @@ export default function HomePage() {
       const waypointIndex = waypoints.findIndex(w => w.id === id);
       return `中継地点 ${waypointIndex >= 0 ? waypointIndex + 1 : '?'}`;
     }
-    return loc?.name || id; // フォールバック
+    return loc?.name || id;
   }, []);
+
 
   const handleSelectLocationFromMap = useCallback((locationId: string) => {
     if (isPlaying) {
@@ -335,8 +323,9 @@ export default function HomePage() {
     }
   }, [isPlaying, pickingLocationId, locations, getPickingLocationLabel]);
 
-  const handleMapClickForPicking = useCallback((latlng: L.LatLng) => {
-    if (pickingLocationId !== null) {
+
+  const handleMapClickForPicking = useCallback((latlng: L.LatLng | null) => {
+    if (latlng && pickingLocationId !== null) {
       handleReverseGeocodeLocation(pickingLocationId, latlng);
     }
   }, [pickingLocationId, handleReverseGeocodeLocation]);
@@ -357,6 +346,15 @@ export default function HomePage() {
     setSelectedTileLayerId(newTileLayerId);
   }, []);
 
+  // ★ 新しいハンドラ: 地点ラベルの表示/非表示を切り替え
+  const handleToggleLocationLabel = useCallback((id: string) => {
+    setLocations(prevLocations =>
+      prevLocations.map(loc =>
+        loc.id === id ? { ...loc, showLabel: !(loc.showLabel ?? true) } : loc // showLabelが未定義ならtrueとして扱う
+      )
+    );
+  }, []);
+
   return (
     <div className="flex flex-col min-h-screen bg-slate-100 dark:bg-slate-900 antialiased">
       <Header
@@ -372,15 +370,16 @@ export default function HomePage() {
             transportOptions={initialTransportOptions}
             geocodingState={geocodingState}
             pickingLocationId={pickingLocationId}
-            onLocationNameChange={handleLocationNameChange} // これが地点名編集に使われる
+            onLocationNameChange={handleLocationNameChange}
             onTransportChange={handleTransportChange}
             onAddWaypoint={addWaypoint}
             onRemoveWaypoint={removeWaypoint}
-            onGeocodeLocation={handleGeocodeLocation}     // 地名検索時に呼ばれる
+            onGeocodeLocation={handleGeocodeLocation}
             onSaveProject={handleSaveProject}
             onLoadProject={handleLoadProject}
-            onSelectFromMap={handleSelectLocationFromMap} // 地図から地点選択モード開始
+            onSelectFromMap={handleSelectLocationFromMap}
             onGenerateRoute={handleGenerateRoute}
+            onToggleLocationLabel={handleToggleLocationLabel} // ★ propsとして渡す
           />
         </div>
         <div className="flex-1 flex flex-col gap-2 md:gap-4">
@@ -406,13 +405,13 @@ export default function HomePage() {
                 className="absolute top-0 bottom-0 right-0 px-3 py-2 text-red-500 dark:text-red-400 hover:text-red-700 dark:hover:text-red-200"
                 aria-label="閉じる"
               >
-                <svg className="fill-current h-5 w-5" role="button" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><title>閉じる</title><path d="M14.348 14.849a1.2 1.2 0 0 1-1.697 0L10 11.819l-2.651 3.029a1.2 1.2 0 1 1-1.697-1.697l2.758-3.15-2.759-3.152a1.2 1.2 0 1 1 1.697-1.697L10 8.183l2.651-3.031a1.2 1.2 0 1 1 1.697 1.697l-2.758 3.152 2.758 3.15a1.2 1.2 0 0 1 0 1.698z"/></svg>
+                <svg className="fill-current h-5 w-5" role="button" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><title>閉じる</title><path d="M14.348 14.849a1.2 1.2 0 0 1-1.697 0L10 11.819l-2.651 3.029a1.2 1.2 0 1 1-1.697-1.697l2.758-3.15-2.759-3.152a1.2 1.2 0 1 1 1.697-1.697L10 8.183l2.651-3.031a1.2 1.2 0 1 1 1.697-1.697l-2.758 3.152 2.758 3.15a1.2 1.2 0 0 1 0 1.698z"/></svg>
               </button>
             </div>
           )}
           <main className="bg-white dark:bg-slate-800 rounded-md shadow-md flex-1 min-h-[400px] md:min-h-[500px] lg:min-h-[600px] relative overflow-hidden" id="map-container-wrapper">
             <MapWithNoSSR
-              locations={locations} // locations state を渡す (ユーザー編集後の name を含む)
+              locations={locations}
               transportOptions={initialTransportOptions}
               isPlaying={isPlaying}
               currentSegmentIndex={currentSegmentIndex}

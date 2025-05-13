@@ -1,3 +1,4 @@
+/* src/app/globals.css */
 @import "tailwindcss";
 
 /* アプリケーション全体で使用するカスタムプロパティ */
@@ -24,3 +25,54 @@ body {
   background-color: var(--background);
   color: var(--foreground);
 }
+
+/* --- ▼▼▼ 追加 ▼▼▼ --- */
+/* Leafletの常時表示ツールチップ用のカスタムスタイル */
+.custom-location-tooltip {
+  background-color: rgba(255, 255, 255, 0.9) !important; /* 背景を少し不透明に */
+  border: 1px solid rgba(0, 0, 0, 0.2) !important;    /* 境界線 */
+  border-radius: 4px !important;                       /* 角丸 */
+  padding: 4px 8px !important;                         /* 内側余白 */
+  font-size: 0.875rem !important;                      /* 文字サイズ (Tailwindのtext-sm相当) */
+  color: #333 !important;                             /* 文字色 (ライトモード時) */
+  box-shadow: 0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24); /* 軽い影 */
+  white-space: nowrap; /* 地名が長い場合に折り返さない */
+}
+
+/* ダークモード時のツールチップスタイル */
+.dark .custom-location-tooltip {
+  background-color: rgba(55, 65, 81, 0.9) !important;  /* ダークモードの背景 (Tailwindのslate-700に似た色) */
+  border-color: rgba(100, 116, 139, 0.5) !important; /* ダークモードの境界線 (Tailwindのslate-500に似た色) */
+  color: #f3f4f6 !important;                          /* ダークモードの文字色 (Tailwindのgray-100相当) */
+  box-shadow: 0 1px 3px rgba(0,0,0,0.3), 0 1px 2px rgba(0,0,0,0.4); /* ダークモード用の影 */
+}
+
+/* Leafletツールチップの吹き出しの矢印の色も調整 (任意) */
+.leaflet-tooltip-top:before {
+  border-top-color: rgba(0, 0, 0, 0.2) !important;
+}
+.dark .leaflet-tooltip-top:before {
+  border-top-color: rgba(100, 116, 139, 0.5) !important;
+}
+
+.leaflet-tooltip-bottom:before {
+  border-bottom-color: rgba(0, 0, 0, 0.2) !important;
+}
+.dark .leaflet-tooltip-bottom:before {
+  border-bottom-color: rgba(100, 116, 139, 0.5) !important;
+}
+
+.leaflet-tooltip-left:before {
+  border-left-color: rgba(0, 0, 0, 0.2) !important;
+}
+.dark .leaflet-tooltip-left:before {
+  border-left-color: rgba(100, 116, 139, 0.5) !important;
+}
+
+.leaflet-tooltip-right:before {
+  border-right-color: rgba(0, 0, 0, 0.2) !important;
+}
+.dark .leaflet-tooltip-right:before {
+  border-right-color: rgba(100, 116, 139, 0.5) !important;
+}
+/* --- ▲▲▲ 追加 ▲▲▲ --- */

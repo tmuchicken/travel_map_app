@@ -4,12 +4,9 @@ import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import 'leaflet-routing-machine/dist/leaflet-routing-machine.css';
 import 'leaflet-routing-machine';
-// ★ TileLayerData を新しいファイルからインポート
-import type { LocationPoint, TransportOption } from '@/app/page'; // LocationPoint, TransportOption は page.tsx からのままでOK
-import type { TileLayerData } from '@/config/mapLayers'; // TileLayerData は mapLayers.ts から
+import type { LocationPoint, TransportOption } from '@/app/page';
+import type { TileLayerData } from '@/config/mapLayers';
 
-// ... (以降のコードは前回提示した省略なしの Map.tsx と同じ)
-// LeafletのデフォルトアイコンURL解決のための修正
 if (typeof window !== 'undefined') {
   // @ts-expect-error: Leaflet
   delete L.Icon.Default.prototype._getIconUrl;
@@ -20,22 +17,19 @@ if (typeof window !== 'undefined') {
   });
 }
 
-// アニメーション用アイコンを作成するヘルパー関数
 const createAnimatedIcon = (transportLabel: string) => {
   return L.divIcon({
     html: `<span style="font-size: 24px;">${transportLabel}</span>`,
     className: 'leaflet-animated-marker-icon',
     iconSize: [30, 30],
-    iconAnchor: [15, 15], // アイコンの中心を座標に合わせる
+    iconAnchor: [15, 15],
   });
 };
 
-// シンプルなベジェ曲線の座標を生成する関数
 const getBezierCurveCoordinates = (start: L.LatLng, end: L.LatLng, control: L.LatLng, numPoints: number = 50): L.LatLng[] => {
     const points: L.LatLng[] = [];
     for (let i = 0; i <= numPoints; i++) {
         const t = i / numPoints;
-        // Quadratic Bezier curve formula: B(t) = (1-t)^2 * P0 + 2 * (1-t) * t * P1 + t^2 * P2
         const lat = Math.pow(1 - t, 2) * start.lat + 2 * (1 - t) * t * control.lat + Math.pow(t, 2) * end.lat;
         const lng = Math.pow(1 - t, 2) * start.lng + 2 * (1 - t) * t * control.lng + Math.pow(t, 2) * end.lng;
         points.push(L.latLng(lat, lng));
@@ -43,22 +37,16 @@ const getBezierCurveCoordinates = (start: L.LatLng, end: L.LatLng, control: L.La
     return points;
 };
 
-// 制御点を計算するシンプルな関数 (中点から垂直方向にオフセット)
 const calculateControlPoint = (start: L.LatLng, end: L.LatLng): L.LatLng => {
     const midLat = (start.lat + end.lat) / 2;
     const midLng = (start.lng + end.lng) / 2;
-
     const dx = end.lng - start.lng;
     const dy = end.lat - start.lat;
-
     const perpendicularDx = -dy;
     const perpendicularDy = dx;
-
     const offsetFactor = 0.2;
-
     const controlLat = midLat + perpendicularDy * offsetFactor;
     const controlLng = midLng + perpendicularDx * offsetFactor;
-
     return L.latLng(controlLat, controlLng);
 };
 
@@ -114,28 +102,23 @@ const Map: React.FC<MapProps> = ({
       }
       return;
     }
-
     const marker = animatedMarkerRef.current;
     const routeCoords = currentAnimationSegmentCoordsRef.current;
     const elapsedTime = Date.now() - animationStartTimeRef.current;
     const totalDuration = currentSegmentTotalDurationRef.current;
     const progress = Math.min(elapsedTime / totalDuration, 1);
-
     if (progress < 1) {
       const targetIndexFloat = progress * (routeCoords.length - 1);
       const baseIndex = Math.floor(targetIndexFloat);
       const nextIndex = Math.min(baseIndex + 1, routeCoords.length - 1);
       const segmentProgress = targetIndexFloat - baseIndex;
-
       const currentPos = routeCoords[baseIndex];
       const nextPos = routeCoords[nextIndex];
-
       if (currentPos && nextPos) {
         const lat = currentPos.lat + (nextPos.lat - currentPos.lat) * segmentProgress;
         const lng = currentPos.lng + (nextPos.lng - currentPos.lng) * segmentProgress;
         const interpolatedLatLng = L.latLng(lat, lng);
         marker.setLatLng(interpolatedLatLng);
-
         if (mapInstanceRef.current && !mapInstanceRef.current.getBounds().contains(interpolatedLatLng)) {
           mapInstanceRef.current.panTo(interpolatedLatLng);
         }
@@ -164,36 +147,40 @@ const Map: React.FC<MapProps> = ({
     return () => {
       if (animationFrameIdRef.current) {
         cancelAnimationFrame(animationFrameIdRef.current);
-        animationFrameIdRef.current = null;
       }
       if (mapInstanceRef.current) {
         activeRoutingControls.current.forEach(control => {
-          if (mapInstanceRef.current) {
-            try { mapInstanceRef.current.removeControl(control); } catch (e) { console.warn("Error removing active routing control during cleanup:", e); }
+          if (mapInstanceRef.current) { // hasLayerチェックは削除
+            try { mapInstanceRef.current.removeControl(control); } catch (_e) { console.warn("Error removing active routing control during cleanup:", _e); }
           }
         });
         activeRoutingControls.current = [];
         layerRefs.current.forEach(layer => {
           if (mapInstanceRef.current && mapInstanceRef.current.hasLayer(layer)) {
-            try { mapInstanceRef.current.removeLayer(layer); } catch (e) { console.warn("Error removing layer during cleanup:", e); }
+            try { mapInstanceRef.current.removeLayer(layer); } catch (_e) { console.warn("Error removing layer during cleanup:", _e); }
           }
         });
         layerRefs.current = [];
         markerRefs.current.forEach(marker => {
           if (mapInstanceRef.current && mapInstanceRef.current.hasLayer(marker)) {
-             try { mapInstanceRef.current.removeLayer(marker); } catch (e) { console.warn("Error removing marker during cleanup:", e); }
+             try {
+                if (marker.getTooltip()) {
+                    marker.unbindTooltip();
+                }
+                mapInstanceRef.current.removeLayer(marker);
+             } catch (_e) { console.warn("Error removing marker during cleanup:", _e); }
           }
         });
         markerRefs.current = [];
         if (animatedMarkerRef.current && mapInstanceRef.current && mapInstanceRef.current.hasLayer(animatedMarkerRef.current)) {
-          try { mapInstanceRef.current.removeLayer(animatedMarkerRef.current); } catch (e) { console.warn("Error removing animated marker during cleanup:", e); }
+          try { mapInstanceRef.current.removeLayer(animatedMarkerRef.current); } catch (_e) { console.warn("Error removing animated marker during cleanup:", _e); }
         }
         animatedMarkerRef.current = null;
-        if (currentTileLayerRef.current && mapInstanceRef.current.hasLayer(currentTileLayerRef.current)) {
-            try { mapInstanceRef.current.removeLayer(currentTileLayerRef.current); } catch(e) { console.warn("Error removing tile layer during cleanup:", e); }
+        if (currentTileLayerRef.current && mapInstanceRef.current && mapInstanceRef.current.hasLayer(currentTileLayerRef.current)) {
+            try { mapInstanceRef.current.removeLayer(currentTileLayerRef.current); } catch(_e) { console.warn("Error removing tile layer during cleanup:", _e); }
         }
         currentTileLayerRef.current = null;
-        try { mapInstanceRef.current.remove(); } catch (e) { console.warn("Error removing map instance during cleanup:", e); }
+        try { mapInstanceRef.current.remove(); } catch (_e) { console.warn("Error removing map instance during cleanup:", _e); }
         mapInstanceRef.current = null;
       }
     };
@@ -224,38 +211,61 @@ const Map: React.FC<MapProps> = ({
     if (!mapInstanceRef.current) return;
     routeCalculationGenerationRef.current++;
     const currentGeneration = routeCalculationGenerationRef.current;
+
     activeRoutingControls.current.forEach(control => {
-      if (mapInstanceRef.current) {
-        try { mapInstanceRef.current.removeControl(control); } catch(e) { console.warn("Error removing old active routing control:", e); }
+      if (mapInstanceRef.current) { // hasLayerチェックは削除
+        try { mapInstanceRef.current.removeControl(control); } catch(_e){ console.warn("Error removing old active routing control:", _e); } // ★ 228行目付近のエラーがここなら _e に
       }
     });
     activeRoutingControls.current = [];
+
     layerRefs.current.forEach(layer => {
       if (mapInstanceRef.current && mapInstanceRef.current.hasLayer(layer)) {
         mapInstanceRef.current.removeLayer(layer);
       }
     });
     layerRefs.current = [];
+
     markerRefs.current.forEach(marker => {
       if (mapInstanceRef.current && mapInstanceRef.current.hasLayer(marker)) {
+        if (marker.getTooltip()) {
+            marker.unbindTooltip();
+        }
         mapInstanceRef.current.removeLayer(marker);
       }
     });
     markerRefs.current = [];
     allSegmentsRouteCoordsRef.current = {};
+
     const validLocations = locations.filter(
       loc => typeof loc.lat === 'number' && typeof loc.lng === 'number' && !isNaN(loc.lat) && !isNaN(loc.lng)
     );
+
     validLocations.forEach(loc => {
       if (mapInstanceRef.current && typeof loc.lat === 'number' && typeof loc.lng === 'number') {
         const marker = L.marker([loc.lat, loc.lng]).addTo(mapInstanceRef.current);
-        marker.bindPopup(String(loc.name || `地点 ${loc.id}`));
+        if ((loc.showLabel ?? true) && loc.name && loc.name.trim() !== '') {
+          marker.bindTooltip(loc.name, {
+            permanent: true,
+            direction: 'top',
+            offset: L.point(0, -15),
+            className: 'custom-location-tooltip'
+          }).openTooltip();
+        }
         markerRefs.current.push(marker);
       }
     });
+
     if (validLocations.length < 2) {
+      layerRefs.current.forEach(layer => {
+        if (mapInstanceRef.current && mapInstanceRef.current.hasLayer(layer)) {
+          mapInstanceRef.current.removeLayer(layer);
+        }
+      });
+      layerRefs.current = [];
       return;
     }
+
     const routePromises = validLocations.map((startPoint, i) => {
       if (i >= validLocations.length - 1) return Promise.resolve();
       const endPoint = validLocations[i + 1];
@@ -314,18 +324,18 @@ const Map: React.FC<MapProps> = ({
             fitSelectedRoutes: false,
             lineOptions: { styles: [{ color: 'blue', opacity: 0.7, weight: 5 }], extendToWaypoints: true, missingRouteTolerance: 100 },
           });
-          routingControl.on('routesfound', function(this: L.Routing.Control, e: L.Routing.RoutingResultEvent) {
+          routingControl.on('routesfound', function(this: L.Routing.Control, e_routes: L.Routing.RoutingResultEvent) {
             if (currentGeneration !== routeCalculationGenerationRef.current || !mapInstanceRef.current) {
-              if (mapInstanceRef.current && activeRoutingControls.current.includes(this)) {
-                try { mapInstanceRef.current.removeControl(this); } catch(err){ console.warn("Error removing control in stale routesfound", err); }
+              if (mapInstanceRef.current && activeRoutingControls.current.includes(this)) { // hasLayerチェックは削除
+                try { mapInstanceRef.current.removeControl(this); } catch(_err){ console.warn("Error removing control in stale routesfound", _err); }
                 activeRoutingControls.current = activeRoutingControls.current.filter(c => c !== this);
               }
               resolveRoutePromise(); return;
             }
-            if (e.routes && e.routes.length > 0 && e.routes[0].coordinates) {
-              allSegmentsRouteCoordsRef.current[i] = e.routes[0].coordinates;
+            if (e_routes.routes && e_routes.routes.length > 0 && e_routes.routes[0].coordinates) {
+              allSegmentsRouteCoordsRef.current[i] = e_routes.routes[0].coordinates;
               if (mapInstanceRef.current) {
-                const routeLine = L.polyline(e.routes[0].coordinates, { color: 'blue', opacity: 0.7, weight: 5 }).addTo(mapInstanceRef.current);
+                const routeLine = L.polyline(e_routes.routes[0].coordinates, { color: 'blue', opacity: 0.7, weight: 5 }).addTo(mapInstanceRef.current);
                 layerRefs.current.push(routeLine);
               }
             } else {
@@ -336,16 +346,16 @@ const Map: React.FC<MapProps> = ({
                 layerRefs.current.push(fallbackPolyline);
               }
             }
-            if (mapInstanceRef.current && activeRoutingControls.current.includes(this)) {
-              try { mapInstanceRef.current.removeControl(this); } catch(err){ console.warn("Error removing control in routesfound", err); }
+            if (mapInstanceRef.current && activeRoutingControls.current.includes(this)) { // hasLayerチェックは削除
+              try { mapInstanceRef.current.removeControl(this); } catch(_err){ console.warn("Error removing control in routesfound", _err); }
               activeRoutingControls.current = activeRoutingControls.current.filter(c => c !== this);
             }
             resolveRoutePromise();
           });
           routingControl.on('routingerror', function(this: L.Routing.Control, errEvent: L.Routing.RoutingErrorEvent) {
             if (currentGeneration !== routeCalculationGenerationRef.current || !mapInstanceRef.current) {
-              if (mapInstanceRef.current && activeRoutingControls.current.includes(this)) {
-                 try { mapInstanceRef.current.removeControl(this); } catch(err){ console.warn("Error removing control in stale routingerror", err); }
+              if (mapInstanceRef.current && activeRoutingControls.current.includes(this)) { // hasLayerチェックは削除
+                 try { mapInstanceRef.current.removeControl(this); } catch(_err){ console.warn("Error removing control in stale routingerror", _err); }
                 activeRoutingControls.current = activeRoutingControls.current.filter(c => c !== this);
               }
               resolveRoutePromise(); return;
@@ -356,8 +366,8 @@ const Map: React.FC<MapProps> = ({
               layerRefs.current.push(fallbackPolyline);
             }
             allSegmentsRouteCoordsRef.current[i] = [startLatLng, endLatLng];
-            if (mapInstanceRef.current && activeRoutingControls.current.includes(this)) {
-              try { mapInstanceRef.current.removeControl(this); } catch(err){ console.warn("Error removing control in routingerror", err); }
+            if (mapInstanceRef.current && activeRoutingControls.current.includes(this)) { // hasLayerチェックは削除
+              try { mapInstanceRef.current.removeControl(this); } catch(_err){ console.warn("Error removing control in routingerror", _err); }
               activeRoutingControls.current = activeRoutingControls.current.filter(c => c !== this);
             }
             resolveRoutePromise();
@@ -430,25 +440,32 @@ const Map: React.FC<MapProps> = ({
     }
   }, [isPlaying, currentSegmentIndex, locations, transportOptions, segmentDurationSeconds, onSegmentComplete, animateMarker]);
 
+  // ピン刺しモード関連のuseEffect
   useEffect(() => {
     if (!mapInstanceRef.current) return;
     const map = mapInstanceRef.current;
-    const handleMapClick = (e: L.LeafletMouseEvent) => {
+
+    // ▼▼▼ 未使用だった handleMapClick を削除 ▼▼▼
+    // const handleMapClick = () => { /* ... */ }; // この行自体を削除
+    // ▲▲▲ ここまで削除 ▲▲▲
+
+    const handleMapClickWithLatLng = (e_click: L.LeafletMouseEvent) => { // 引数名を e_click に変更
       if (isPickingLocation) {
-        onMapClickForPicking(e.latlng);
+        onMapClickForPicking(e_click.latlng);
       }
     };
+
     if (isPickingLocation) {
-      map.on('click', handleMapClick);
-      map.getContainer().style.cursor = 'crosshair';
+      map.on('click', handleMapClickWithLatLng);
+      if(map.getContainer()) map.getContainer().style.cursor = 'crosshair';
     } else {
-      map.off('click', handleMapClick);
+      map.off('click', handleMapClickWithLatLng);
       if (map.getContainer()) {
         map.getContainer().style.cursor = '';
       }
     }
     return () => {
-      map.off('click', handleMapClick);
+      map.off('click', handleMapClickWithLatLng);
       if (map.getContainer()) {
         map.getContainer().style.cursor = '';
       }
