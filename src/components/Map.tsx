@@ -7,6 +7,9 @@ import 'leaflet-routing-machine';
 import type { LocationPoint, TransportOption } from '@/app/page';
 import type { TileLayerData } from '@/config/mapLayers';
 
+// ★ page.tsx から AnimationPhase 型をインポート (またはここで直接定義)
+type AnimationPhase = 'stopped' | 'preDelay' | 'animating' | 'postDelay';
+
 if (typeof window !== 'undefined') {
   // @ts-expect-error: Leaflet
   delete L.Icon.Default.prototype._getIconUrl;
@@ -56,7 +59,8 @@ interface MapProps {
   zoom?: number;
   locations: LocationPoint[];
   transportOptions: TransportOption[];
-  isPlaying: boolean;
+  // isPlaying: boolean; // ← animationPhase で管理するため削除または変更
+  animationPhase: AnimationPhase; // ★ 新しいprop
   currentSegmentIndex: number;
   segmentDurationSeconds: number;
   onSegmentComplete: () => void;
@@ -71,7 +75,7 @@ const Map: React.FC<MapProps> = ({
   zoom = 6,
   locations,
   transportOptions,
-  isPlaying,
+  animationPhase, // ★ 受け取る
   currentSegmentIndex,
   segmentDurationSeconds,
   onSegmentComplete,
@@ -96,18 +100,22 @@ const Map: React.FC<MapProps> = ({
   const currentTileLayerRef = useRef<L.TileLayer | null>(null);
 
   const animateMarker = useCallback(() => {
-    // ... (変更なし) ...
-    if (!animatedMarkerRef.current || currentAnimationSegmentCoordsRef.current.length < 2 || !mapInstanceRef.current || !animationStartTimeRef.current) {
-      if (isPlaying) {
-        onSegmentComplete();
-      }
+    if (animationPhaseRef.current !== 'animating' || // ★ animating フェーズ以外ではアニメーションしない
+        !animatedMarkerRef.current ||
+        currentAnimationSegmentCoordsRef.current.length < 2 ||
+        !mapInstanceRef.current ||
+        !animationStartTimeRef.current) {
+      // animating 中でなければ、または必要な要素がなければ何もしない
+      // (セグメント完了の呼び出しは animationPhase の変更に委ねる)
       return;
     }
+
     const marker = animatedMarkerRef.current;
     const routeCoords = currentAnimationSegmentCoordsRef.current;
     const elapsedTime = Date.now() - animationStartTimeRef.current;
     const totalDuration = currentSegmentTotalDurationRef.current;
     const progress = Math.min(elapsedTime / totalDuration, 1);
+
     if (progress < 1) {
       const targetIndexFloat = progress * (routeCoords.length - 1);
       const baseIndex = Math.floor(targetIndexFloat);
@@ -125,7 +133,7 @@ const Map: React.FC<MapProps> = ({
         }
       }
       animationFrameIdRef.current = requestAnimationFrame(animateMarker);
-    } else {
+    } else { // アニメーション1区間完了
       if (routeCoords.length > 0) {
         marker.setLatLng(routeCoords[routeCoords.length - 1]);
       }
@@ -133,12 +141,18 @@ const Map: React.FC<MapProps> = ({
         cancelAnimationFrame(animationFrameIdRef.current);
         animationFrameIdRef.current = null;
       }
-      onSegmentComplete();
+      onSegmentComplete(); // page.tsx にセグメント完了を通知
     }
-  }, [onSegmentComplete, isPlaying]);
+  }, [onSegmentComplete]); // animationPhaseRef は依存配列に含めない方針
+
+  // ★ animationPhase の最新値を animateMarker 内で参照するためのRef
+  const animationPhaseRef = useRef(animationPhase);
+  useEffect(() => {
+    animationPhaseRef.current = animationPhase;
+  }, [animationPhase]);
+
 
   useEffect(() => {
-    // ... (変更なし) ...
     if (mapRef.current && !mapInstanceRef.current) {
       mapInstanceRef.current = L.map(mapRef.current, { zoomControl: true }).setView(center, zoom);
       if (!osrmWarningDisplayed) {
@@ -147,20 +161,14 @@ const Map: React.FC<MapProps> = ({
       }
     }
     return () => {
-      if (animationFrameIdRef.current) {
-        cancelAnimationFrame(animationFrameIdRef.current);
-      }
+      if (animationFrameIdRef.current) cancelAnimationFrame(animationFrameIdRef.current);
       if (mapInstanceRef.current) {
         activeRoutingControls.current.forEach(control => {
-          if (mapInstanceRef.current) {
-            try { mapInstanceRef.current.removeControl(control); } catch (_e) { console.warn("Error removing active routing control during cleanup:", _e); }
-          }
+          if (mapInstanceRef.current) try { mapInstanceRef.current.removeControl(control); } catch (_e) { console.warn("Error removing active routing control during cleanup:", _e); }
         });
         activeRoutingControls.current = [];
         layerRefs.current.forEach(layer => {
-          if (mapInstanceRef.current && mapInstanceRef.current.hasLayer(layer)) {
-            try { mapInstanceRef.current.removeLayer(layer); } catch (_e) { console.warn("Error removing layer during cleanup:", _e); }
-          }
+          if (mapInstanceRef.current && mapInstanceRef.current.hasLayer(layer)) try { mapInstanceRef.current.removeLayer(layer); } catch (_e) { console.warn("Error removing layer during cleanup:", _e); }
         });
         layerRefs.current = [];
         markerRefs.current.forEach(marker => {
@@ -189,13 +197,8 @@ const Map: React.FC<MapProps> = ({
   }, []);
 
   useEffect(() => {
-    // ... (タイルレイヤー変更ロジックは変更なし) ...
-    if (!mapInstanceRef.current || !selectedTileLayer) {
-      return;
-    }
-    if (currentTileLayerRef.current) {
-      mapInstanceRef.current.removeLayer(currentTileLayerRef.current);
-    }
+    if (!mapInstanceRef.current || !selectedTileLayer) return;
+    if (currentTileLayerRef.current) mapInstanceRef.current.removeLayer(currentTileLayerRef.current);
     const newLayer = L.tileLayer(selectedTileLayer.url, {
       attribution: selectedTileLayer.attribution,
       maxZoom: selectedTileLayer.maxZoom,
@@ -213,21 +216,14 @@ const Map: React.FC<MapProps> = ({
     if (!mapInstanceRef.current) return;
     routeCalculationGenerationRef.current++;
     const currentGeneration = routeCalculationGenerationRef.current;
-
     activeRoutingControls.current.forEach(control => {
-      if (mapInstanceRef.current) {
-        try { mapInstanceRef.current.removeControl(control); } catch(_e){ console.warn("Error removing old active routing control:", _e); }
-      }
+      if (mapInstanceRef.current) try { mapInstanceRef.current.removeControl(control); } catch(_e){ console.warn("Error removing old active routing control:", _e); }
     });
     activeRoutingControls.current = [];
-
     layerRefs.current.forEach(layer => {
-      if (mapInstanceRef.current && mapInstanceRef.current.hasLayer(layer)) {
-        mapInstanceRef.current.removeLayer(layer);
-      }
+      if (mapInstanceRef.current && mapInstanceRef.current.hasLayer(layer)) mapInstanceRef.current.removeLayer(layer);
     });
     layerRefs.current = [];
-
     markerRefs.current.forEach(marker => {
       if (mapInstanceRef.current && mapInstanceRef.current.hasLayer(marker)) {
         if (marker.getTooltip()) marker.unbindTooltip();
@@ -237,168 +233,92 @@ const Map: React.FC<MapProps> = ({
     });
     markerRefs.current = [];
     allSegmentsRouteCoordsRef.current = {};
-
     const validLocations = locations.filter(
       loc => typeof loc.lat === 'number' && typeof loc.lng === 'number' && !isNaN(loc.lat) && !isNaN(loc.lng)
     );
-
     validLocations.forEach(loc => {
       if (mapInstanceRef.current && typeof loc.lat === 'number' && typeof loc.lng === 'number') {
         const marker = L.marker([loc.lat, loc.lng]).addTo(mapInstanceRef.current);
-
-        // ▼▼▼ 常時表示ツールチップに写真と地名を表示 ▼▼▼
-        let tooltipContent = `<div style="text-align: center; min-width: 75px;">`; // 全体の最小幅を少し広げる (1.5倍の目安)
+        let popupContent = `<div style="text-align: center; max-width: 180px;">`;
         if (loc.name && loc.name.trim() !== '') {
           const escapedName = loc.name.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
-          tooltipContent += `<strong>${escapedName}</strong>`;
+          popupContent += `<strong>${escapedName}</strong>`;
         }
         if (loc.photoDataUrl) {
-          // 地名と写真の間はCSSで調整するので、<br/> は状況に応じて
-          // if (loc.name && loc.name.trim() !== '') tooltipContent += `<br/>`;
-          // ▼▼▼ 画像のインラインスタイルでサイズを少し大きくする (例: 90px x 90px) ▼▼▼
-          tooltipContent += `<img src="${loc.photoDataUrl}" alt="写真" style="max-width: 90px; max-height: 90px; margin-top: 3px; border-radius: 3px; display: block; margin-left: auto; margin-right: auto;" />`;
-          // ▲▲▲ 画像のインラインスタイル調整 ▲▲▲
+          if (loc.name && loc.name.trim() !== '') popupContent += `<br/>`;
+          popupContent += `<img src="${loc.photoDataUrl}" alt="思い出の写真" style="max-width: 150px; max-height: 150px; margin-top: 5px; border-radius: 4px; display: block; margin-left: auto; margin-right: auto;" />`;
         }
-        tooltipContent += `</div>`;
-
+        popupContent += `</div>`;
         if ((loc.showLabel ?? true) && ((loc.name && loc.name.trim() !== '') || loc.photoDataUrl)) {
-          marker.bindTooltip(tooltipContent, {
-            permanent: true,
-            direction: 'top', // または 'auto' も試す価値あり
-            offset: L.point(0, -15), // オフセットもフォントや全体のサイズによって調整
-            className: 'custom-location-tooltip'
-          }).openTooltip();
+          marker.bindPopup(popupContent, { minWidth: 100 });
         }
-        // ▲▲▲ 常時表示ツールチップ ▲▲▲
         markerRefs.current.push(marker);
       }
     });
-
     if (validLocations.length < 2) {
-      // ... (変更なし) ...
       layerRefs.current.forEach(layer => {
-        if (mapInstanceRef.current && mapInstanceRef.current.hasLayer(layer)) {
-          mapInstanceRef.current.removeLayer(layer);
-        }
+        if (mapInstanceRef.current && mapInstanceRef.current.hasLayer(layer)) mapInstanceRef.current.removeLayer(layer);
       });
       layerRefs.current = [];
       return;
     }
-
     const routePromises = validLocations.map((startPoint, i) => {
-      // ... (経路検索ロジックは変更なし) ...
       if (i >= validLocations.length - 1) return Promise.resolve();
       const endPoint = validLocations[i + 1];
       const transportMode = startPoint.transport;
-      if (typeof startPoint.lat !== 'number' || typeof startPoint.lng !== 'number' ||
-          typeof endPoint.lat !== 'number' || typeof endPoint.lng !== 'number' || !mapInstanceRef.current) {
-        allSegmentsRouteCoordsRef.current[i] = [];
-        return Promise.resolve();
+      if (typeof startPoint.lat !== 'number' || typeof startPoint.lng !== 'number' || typeof endPoint.lat !== 'number' || typeof endPoint.lng !== 'number' || !mapInstanceRef.current) {
+        allSegmentsRouteCoordsRef.current[i] = []; return Promise.resolve();
       }
       const startLatLng = L.latLng(startPoint.lat, startPoint.lng);
       const endLatLng = L.latLng(endPoint.lat, endPoint.lng);
       if (transportMode === 'Plane' || transportMode === 'Ship') {
           if (mapInstanceRef.current) {
-              let polylineColor: string;
-              let dashArray: string | undefined = undefined;
+              let polylineColor: string; let dashArray: string | undefined = undefined;
               const controlPoint = calculateControlPoint(startLatLng, endLatLng);
               const coordsToDraw = getBezierCurveCoordinates(startLatLng, endLatLng, controlPoint);
-              if (transportMode === 'Plane') {
-                  polylineColor = 'green';
-                  dashArray = '5, 10';
-              } else {
-                  polylineColor = 'blue';
-              }
-              const polyline = L.polyline(coordsToDraw, {
-                  color: polylineColor,
-                  weight: 3,
-                  opacity: 0.7,
-                  dashArray: dashArray,
-              }).addTo(mapInstanceRef.current);
-              layerRefs.current.push(polyline);
-              allSegmentsRouteCoordsRef.current[i] = coordsToDraw;
-          } else {
-              allSegmentsRouteCoordsRef.current[i] = [startLatLng, endLatLng];
-          }
+              if (transportMode === 'Plane') { polylineColor = 'green'; dashArray = '5, 10'; } else { polylineColor = 'blue'; }
+              const polyline = L.polyline(coordsToDraw, { color: polylineColor, weight: 3, opacity: 0.7, dashArray: dashArray }).addTo(mapInstanceRef.current);
+              layerRefs.current.push(polyline); allSegmentsRouteCoordsRef.current[i] = coordsToDraw;
+          } else { allSegmentsRouteCoordsRef.current[i] = [startLatLng, endLatLng]; }
           return Promise.resolve();
       } else {
         return new Promise<void>((resolveRoutePromise) => {
-          if (!mapInstanceRef.current) {
-            allSegmentsRouteCoordsRef.current[i] = [startLatLng, endLatLng];
-            resolveRoutePromise(); return;
-          }
-          const planOptions: L.Routing.PlanOptions = {
-            createMarker: () => false,
-            draggableWaypoints: false,
-            addWaypoints: false,
-          };
+          if (!mapInstanceRef.current) { allSegmentsRouteCoordsRef.current[i] = [startLatLng, endLatLng]; resolveRoutePromise(); return; }
+          const planOptions: L.Routing.PlanOptions = { createMarker: () => false, draggableWaypoints: false, addWaypoints: false };
           const routingControl = L.Routing.control({
-            router: L.Routing.osrmv1({
-              serviceUrl: 'https://router.project-osrm.org/route/v1',
-              profile: transportMode === 'Walk' ? 'foot' : 'car',
-            }),
+            router: L.Routing.osrmv1({ serviceUrl: 'https://router.project-osrm.org/route/v1', profile: transportMode === 'Walk' ? 'foot' : 'car' }),
             plan: L.routing.plan([startLatLng, endLatLng], planOptions),
-            routeWhileDragging: false,
-            show: false,
-            addWaypoints: false,
-            fitSelectedRoutes: false,
+            routeWhileDragging: false, show: false, addWaypoints: false, fitSelectedRoutes: false,
             lineOptions: { styles: [{ color: 'blue', opacity: 0.7, weight: 5 }], extendToWaypoints: true, missingRouteTolerance: 100 },
           });
           routingControl.on('routesfound', function(this: L.Routing.Control, e_routes: L.Routing.RoutingResultEvent) {
             if (currentGeneration !== routeCalculationGenerationRef.current || !mapInstanceRef.current) {
-              if (mapInstanceRef.current && activeRoutingControls.current.includes(this)) {
-                try { mapInstanceRef.current.removeControl(this); } catch(_err){ console.warn("Error removing control in stale routesfound", _err); }
-                activeRoutingControls.current = activeRoutingControls.current.filter(c => c !== this);
-              }
-              resolveRoutePromise(); return;
+              if (mapInstanceRef.current && activeRoutingControls.current.includes(this)) try { mapInstanceRef.current.removeControl(this); } catch(_err){ console.warn("Error removing control in stale routesfound", _err); }
+              activeRoutingControls.current = activeRoutingControls.current.filter(c => c !== this); resolveRoutePromise(); return;
             }
             if (e_routes.routes && e_routes.routes.length > 0 && e_routes.routes[0].coordinates) {
               allSegmentsRouteCoordsRef.current[i] = e_routes.routes[0].coordinates;
-              if (mapInstanceRef.current) {
-                const routeLine = L.polyline(e_routes.routes[0].coordinates, { color: 'blue', opacity: 0.7, weight: 5 }).addTo(mapInstanceRef.current);
-                layerRefs.current.push(routeLine);
-              }
+              if (mapInstanceRef.current) { const routeLine = L.polyline(e_routes.routes[0].coordinates, { color: 'blue', opacity: 0.7, weight: 5 }).addTo(mapInstanceRef.current); layerRefs.current.push(routeLine); }
             } else {
-              allSegmentsRouteCoordsRef.current[i] = [startLatLng, endLatLng];
-              onRoutingError(`区間 ${i+1} (${startPoint.name} -> ${endPoint.name}) の経路が見つかりませんでした。直線で表示します。`);
-              if (mapInstanceRef.current) {
-                const fallbackPolyline = L.polyline([startLatLng, endLatLng], { color: 'orange', weight: 3, opacity: 0.7, dashArray: '5, 5' }).addTo(mapInstanceRef.current);
-                layerRefs.current.push(fallbackPolyline);
-              }
+              allSegmentsRouteCoordsRef.current[i] = [startLatLng, endLatLng]; onRoutingError(`区間 ${i+1} (${startPoint.name} -> ${endPoint.name}) の経路が見つかりませんでした。直線で表示します。`);
+              if (mapInstanceRef.current) { const fallbackPolyline = L.polyline([startLatLng, endLatLng], { color: 'orange', weight: 3, opacity: 0.7, dashArray: '5, 5' }).addTo(mapInstanceRef.current); layerRefs.current.push(fallbackPolyline); }
             }
-            if (mapInstanceRef.current && activeRoutingControls.current.includes(this)) {
-              try { mapInstanceRef.current.removeControl(this); } catch(_err){ console.warn("Error removing control in routesfound", _err); }
-              activeRoutingControls.current = activeRoutingControls.current.filter(c => c !== this);
-            }
-            resolveRoutePromise();
+            if (mapInstanceRef.current && activeRoutingControls.current.includes(this)) try { mapInstanceRef.current.removeControl(this); } catch(_err){ console.warn("Error removing control in routesfound", _err); }
+            activeRoutingControls.current = activeRoutingControls.current.filter(c => c !== this); resolveRoutePromise();
           });
           routingControl.on('routingerror', function(this: L.Routing.Control, errEvent: L.Routing.RoutingErrorEvent) {
             if (currentGeneration !== routeCalculationGenerationRef.current || !mapInstanceRef.current) {
-              if (mapInstanceRef.current && activeRoutingControls.current.includes(this)) {
-                 try { mapInstanceRef.current.removeControl(this); } catch(_err){ console.warn("Error removing control in stale routingerror", _err); }
-                activeRoutingControls.current = activeRoutingControls.current.filter(c => c !== this);
-              }
-              resolveRoutePromise(); return;
+              if (mapInstanceRef.current && activeRoutingControls.current.includes(this)) try { mapInstanceRef.current.removeControl(this); } catch(_err){ console.warn("Error removing control in stale routingerror", _err); }
+              activeRoutingControls.current = activeRoutingControls.current.filter(c => c !== this); resolveRoutePromise(); return;
             }
             onRoutingError(`区間 ${i+1} (${startPoint.name} -> ${endPoint.name}) の経路計算中にエラー: ${errEvent.error?.message || '不明なエラー'}. 直線で表示します。`);
-            if (mapInstanceRef.current) {
-              const fallbackPolyline = L.polyline([startLatLng, endLatLng], { color: 'red', weight: 3, opacity: 0.5, dashArray: '5, 5' }).addTo(mapInstanceRef.current);
-              layerRefs.current.push(fallbackPolyline);
-            }
+            if (mapInstanceRef.current) { const fallbackPolyline = L.polyline([startLatLng, endLatLng], { color: 'red', weight: 3, opacity: 0.5, dashArray: '5, 5' }).addTo(mapInstanceRef.current); layerRefs.current.push(fallbackPolyline); }
             allSegmentsRouteCoordsRef.current[i] = [startLatLng, endLatLng];
-            if (mapInstanceRef.current && activeRoutingControls.current.includes(this)) {
-              try { mapInstanceRef.current.removeControl(this); } catch(_err){ console.warn("Error removing control in routingerror", _err); }
-              activeRoutingControls.current = activeRoutingControls.current.filter(c => c !== this);
-            }
-            resolveRoutePromise();
+            if (mapInstanceRef.current && activeRoutingControls.current.includes(this)) try { mapInstanceRef.current.removeControl(this); } catch(_err){ console.warn("Error removing control in routingerror", _err); }
+            activeRoutingControls.current = activeRoutingControls.current.filter(c => c !== this); resolveRoutePromise();
           });
-          if (mapInstanceRef.current) {
-            const addedControl = routingControl.addTo(mapInstanceRef.current);
-            activeRoutingControls.current.push(addedControl);
-          } else {
-            allSegmentsRouteCoordsRef.current[i] = [startLatLng, endLatLng];
-            resolveRoutePromise();
-          }
+          if (mapInstanceRef.current) { const addedControl = routingControl.addTo(mapInstanceRef.current); activeRoutingControls.current.push(addedControl); }
+          else { allSegmentsRouteCoordsRef.current[i] = [startLatLng, endLatLng]; resolveRoutePromise(); }
         });
       }
     });
@@ -406,22 +326,57 @@ const Map: React.FC<MapProps> = ({
       if (currentGeneration !== routeCalculationGenerationRef.current || !mapInstanceRef.current) return;
       if (validLocations.length > 0) {
           const bounds = L.latLngBounds(validLocations.map(loc => L.latLng(loc.lat!, loc.lng!)));
-          if (bounds.isValid() && mapInstanceRef.current) {
-              mapInstanceRef.current.fitBounds(bounds, { padding: [50, 50], maxZoom: 16 });
-          }
+          if (bounds.isValid() && mapInstanceRef.current) mapInstanceRef.current.fitBounds(bounds, { padding: [50, 50], maxZoom: 16 });
       }
     });
   }, [locations, transportOptions, onRoutingError]);
 
+  // ★ アニメーション状態の制御 (animationPhase に応じて)
   useEffect(() => {
-    // ... (アニメーションロジックは変更なし) ...
     if (!mapInstanceRef.current) return;
     const validLocations = locations.filter(loc => typeof loc.lat === 'number' && typeof loc.lng === 'number');
-    if (isPlaying && currentSegmentIndex < validLocations.length - 1 && validLocations.length > 0) {
+
+    if (animationPhase === 'stopped') {
+      // アニメーションマーカーを削除 (もしあれば)
+      if (animatedMarkerRef.current && mapInstanceRef.current.hasLayer(animatedMarkerRef.current)) {
+        mapInstanceRef.current.removeLayer(animatedMarkerRef.current);
+        animatedMarkerRef.current = null;
+      }
+      if (animationFrameIdRef.current) {
+        cancelAnimationFrame(animationFrameIdRef.current);
+        animationFrameIdRef.current = null;
+      }
+      // 停止時はアイコンを何も表示しないか、あるいは最初の地点に静止アイコンを出すか選択
+      // ここでは一旦何もしない (再生時に preDelay で表示)
+    } else if (animationPhase === 'preDelay') {
+      // 開始前ディレイ: 最初の地点にアイコンを表示して待機
+      if (validLocations.length > 0) {
+        const firstPoint = validLocations[0];
+        const transportOption = transportOptions.find(opt => opt.name === firstPoint.transport);
+        if (transportOption && typeof firstPoint.lat === 'number' && typeof firstPoint.lng === 'number') {
+          const startLatLng = L.latLng(firstPoint.lat, firstPoint.lng);
+          if (!animatedMarkerRef.current) {
+            animatedMarkerRef.current = L.marker(startLatLng, {
+              icon: createAnimatedIcon(transportOption.label),
+              zIndexOffset: 1000
+            }).addTo(mapInstanceRef.current);
+          } else {
+            animatedMarkerRef.current.setLatLng(startLatLng);
+            animatedMarkerRef.current.setIcon(createAnimatedIcon(transportOption.label));
+          }
+           if (mapInstanceRef.current && !mapInstanceRef.current.getBounds().contains(startLatLng)) {
+            mapInstanceRef.current.panTo(startLatLng); // 開始地点にパン
+          }
+        }
+      }
+    } else if (animationPhase === 'animating') {
+      // アニメーション実行中
+      if (currentSegmentIndex < validLocations.length - 1 && validLocations.length > 0) {
         const segmentStartPoint = validLocations[currentSegmentIndex];
         const transportOption = transportOptions.find(opt => opt.name === segmentStartPoint.transport);
         const coordsForCurrentSegment = allSegmentsRouteCoordsRef.current[currentSegmentIndex] || [];
         currentAnimationSegmentCoordsRef.current = coordsForCurrentSegment;
+
         if (transportOption && typeof segmentStartPoint.lat === 'number' && typeof segmentStartPoint.lng === 'number' &&
             coordsForCurrentSegment.length > 0 && mapInstanceRef.current) {
             const startLatLng = coordsForCurrentSegment[0];
@@ -434,35 +389,36 @@ const Map: React.FC<MapProps> = ({
                 animatedMarkerRef.current.setLatLng(startLatLng);
                 animatedMarkerRef.current.setIcon(createAnimatedIcon(transportOption.label));
             }
-            const durationMs = (segmentDurationSeconds && segmentDurationSeconds > 0) ? segmentDurationSeconds * 1000 : 5000;
+            const durationMs = (segmentDurationSeconds > 0) ? segmentDurationSeconds * 1000 : 5000;
             currentSegmentTotalDurationRef.current = durationMs;
             animationStartTimeRef.current = Date.now();
-            animateMarker();
+            animateMarker(); // アニメーションフレームを開始
         } else {
-             currentAnimationSegmentCoordsRef.current = [];
-             if (animatedMarkerRef.current && mapInstanceRef.current && mapInstanceRef.current.hasLayer(animatedMarkerRef.current)) {
-                mapInstanceRef.current.removeLayer(animatedMarkerRef.current);
-                animatedMarkerRef.current = null;
-             }
-             if (isPlaying) {
-                onSegmentComplete();
-             }
+            // アニメーション開始に必要な情報がない場合
+            onSegmentComplete(); // 次のセグメントへ進むか、終了処理へ
         }
-    } else {
-        currentAnimationSegmentCoordsRef.current = [];
-        if (animatedMarkerRef.current && mapInstanceRef.current && mapInstanceRef.current.hasLayer(animatedMarkerRef.current)) {
-            mapInstanceRef.current.removeLayer(animatedMarkerRef.current);
-            animatedMarkerRef.current = null;
+      } else {
+        // currentSegmentIndex が範囲外 (通常は発生しないはずだが念のため)
+        onSegmentComplete();
+      }
+    } else if (animationPhase === 'postDelay') {
+      // 終了後ディレイ: 最後の地点にアイコンを表示して待機
+      if (validLocations.length > 1 && animatedMarkerRef.current) { // アイコンが既に存在し、地点が複数ある場合
+        const lastPointCoords = allSegmentsRouteCoordsRef.current[validLocations.length - 2]; // 最後の区間の座標
+        if (lastPointCoords && lastPointCoords.length > 0) {
+          const endLatLng = lastPointCoords[lastPointCoords.length - 1];
+          animatedMarkerRef.current.setLatLng(endLatLng);
+          // アイコンの種類は最後の区間の移動手段のまま
+           if (mapInstanceRef.current && !mapInstanceRef.current.getBounds().contains(endLatLng)) {
+            mapInstanceRef.current.panTo(endLatLng); // 最終地点にパン
+          }
         }
-        if (animationFrameIdRef.current) {
-            cancelAnimationFrame(animationFrameIdRef.current);
-            animationFrameIdRef.current = null;
-        }
+      }
     }
-  }, [isPlaying, currentSegmentIndex, locations, transportOptions, segmentDurationSeconds, onSegmentComplete, animateMarker]);
+  }, [animationPhase, currentSegmentIndex, locations, transportOptions, segmentDurationSeconds, onSegmentComplete, animateMarker]);
+
 
   useEffect(() => {
-    // ... (ピン刺しモードロジックは変更なし) ...
     if (!mapInstanceRef.current) return;
     const map = mapInstanceRef.current;
     const handleMapClickWithLatLng = (e_click: L.LeafletMouseEvent) => {

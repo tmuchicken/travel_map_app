@@ -2,7 +2,7 @@
 "use client";
 
 import dynamic from 'next/dynamic';
-import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react'; // useRef を追加
 import Header from '@/components/Header';
 import ControlPanel from '@/components/ControlPanel';
 import AnimationControls from '@/components/AnimationControls';
@@ -25,6 +25,9 @@ export interface TransportOption {
   label: string;
 }
 
+// ★ 新しいアニメーション状態の型
+type AnimationPhase = 'stopped' | 'preDelay' | 'animating' | 'postDelay';
+
 const MapWithNoSSR = dynamic(() => import('@/components/Map'), {
   ssr: false,
   loading: () => <div className="flex justify-center items-center h-full bg-gray-200 dark:bg-gray-700"><p className="text-slate-700 dark:text-slate-200">地図を読み込み中です...</p></div>,
@@ -46,15 +49,24 @@ export default function HomePage() {
   ]);
 
   const [geocodingState, setGeocodingState] = useState<Record<string, 'idle' | 'loading' | 'error'>>({});
-  const [isPlaying, setIsPlaying] = useState(false);
+  const [isPlayingUi, setIsPlayingUi] = useState(false); // UIの再生/一時停止ボタンの状態
+  const [animationPhase, setAnimationPhase] = useState<AnimationPhase>('stopped'); // アニメーションの実際のフェーズ
   const [currentSegmentIndex, setCurrentSegmentIndex] = useState(0);
   const [segmentDurationSeconds, setSegmentDurationSeconds] = useState(5);
   const [mapError, setMapError] = useState<string | null>(null);
   const [pickingLocationId, setPickingLocationId] = useState<string | null>(null);
   const [selectedTileLayerId, setSelectedTileLayerId] = useState<string>(availableTileLayers[0].id);
 
+  // animationPhase の最新値を setTimeout/Interval 内で参照するためのRef
+  const animationPhaseRef = useRef(animationPhase);
   useEffect(() => {
-    setIsPlaying(false);
+    animationPhaseRef.current = animationPhase;
+  }, [animationPhase]);
+
+  // locationsが変更されたらアニメーションを停止状態にする
+  useEffect(() => {
+    setAnimationPhase('stopped');
+    setIsPlayingUi(false);
     setCurrentSegmentIndex(0);
   }, [locations]);
 
@@ -166,7 +178,8 @@ export default function HomePage() {
       setMapError("ルートを生成するには、出発地と目的地の両方に有効な座標が必要です。各地点の「検索」ボタンを押して座標を取得してください。");
       return;
     }
-    setIsPlaying(false);
+    setAnimationPhase('stopped'); // ルート再生成時はアニメーション停止
+    setIsPlayingUi(false);
     setCurrentSegmentIndex(0);
     setMapError(null);
     console.log("Route generation triggered. Locations:", locations);
@@ -178,13 +191,11 @@ export default function HomePage() {
         return;
     }
     try {
-      // ★★★ 修正箇所 ★★★
       const locationsToSave = locations.map(loc => {
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const { photoDataUrl, ...rest } = loc; // photoDataUrl を分割代入で取り除くが、変数は使わない
+        const { photoDataUrl, ...rest } = loc;
         return rest;
       });
-      // ★★★ ここまで ★★★
       const projectData = JSON.stringify({ locations: locationsToSave, segmentDurationSeconds, selectedTileLayerId });
       localStorage.setItem('travelRouteProject', projectData);
       alert("プロジェクトを保存しました。");
@@ -224,7 +235,8 @@ export default function HomePage() {
           setSelectedTileLayerId(availableTileLayers[0].id);
         }
         alert("プロジェクトを読み込みました。");
-        setIsPlaying(false);
+        setAnimationPhase('stopped');
+        setIsPlayingUi(false);
         setCurrentSegmentIndex(0);
         setMapError(null);
       } else {
@@ -242,30 +254,41 @@ export default function HomePage() {
         setMapError("地点選択モード中はアニメーションを操作できません。地点を選択するかキャンセルしてください。");
         return;
     }
-    setIsPlaying(false);
+    setAnimationPhase('stopped');
+    setIsPlayingUi(false);
     setCurrentSegmentIndex(0);
     setMapError(null);
   }, [pickingLocationId]);
 
   const handlePlayPauseToggle = useCallback(() => {
-     if (pickingLocationId !== null) {
-        setMapError("地点選択モード中はアニメーションを操作できません。地点を選択するかキャンセルしてください。");
-        return;
-    }
-    const validLocations = locations.filter(loc => loc.lat !== undefined && loc.lng !== undefined);
-    if (validLocations.length < 2 && !isPlaying) {
-        setMapError("アニメーションを開始するには、まず有効な経路を生成してください。");
-        return;
-    }
-    setMapError(null);
-    setIsPlaying(prevIsPlaying => {
-      const newIsPlaying = !prevIsPlaying;
-      if (newIsPlaying && currentSegmentIndex >= validLocations.length - 1 && validLocations.length > 1) {
-          setCurrentSegmentIndex(0);
-      }
-      return newIsPlaying;
-    });
-  }, [isPlaying, locations, currentSegmentIndex, pickingLocationId]);
+    if (pickingLocationId !== null) {
+       setMapError("地点選択モード中はアニメーションを操作できません。地点を選択するかキャンセルしてください。");
+       return;
+   }
+   const validLocations = locations.filter(loc => loc.lat !== undefined && loc.lng !== undefined);
+   if (validLocations.length < 2 && animationPhaseRef.current === 'stopped') {
+       setMapError("アニメーションを開始するには、まず有効な経路を生成してください。");
+       return;
+   }
+   setMapError(null);
+
+   if (animationPhaseRef.current === 'stopped') {
+     setCurrentSegmentIndex(0);
+     setAnimationPhase('preDelay');
+     setIsPlayingUi(true);
+     setTimeout(() => {
+       if (animationPhaseRef.current === 'preDelay') { // ディレイ中に停止されていないか確認
+         setAnimationPhase('animating');
+       }
+     }, 1000);
+   } else if (animationPhaseRef.current === 'animating') {
+     setAnimationPhase('stopped'); // アニメーション中に押されたら即停止
+     setIsPlayingUi(false);
+   } else if (animationPhaseRef.current === 'preDelay' || animationPhaseRef.current === 'postDelay') {
+     setAnimationPhase('stopped'); // ディレイ中に押されたら即停止
+     setIsPlayingUi(false);
+   }
+ }, [locations, pickingLocationId]); // animationPhaseRefは常に最新なので依存配列に含めない
 
   const handleDurationChange = useCallback((newDuration: number) => {
      if (pickingLocationId !== null) {
@@ -276,15 +299,25 @@ export default function HomePage() {
     setSegmentDurationSeconds(validatedDuration);
   }, [pickingLocationId]);
 
-   const handleSegmentComplete = useCallback(() => {
+  const handleSegmentComplete = useCallback(() => {
+    const validLocationsCount = locations.filter(loc => loc.lat !== undefined && loc.lng !== undefined).length;
+    // setCurrentSegmentIndex のコールバック内で animationPhaseRef.current を参照
     setCurrentSegmentIndex(prevIndex => {
+      if (animationPhaseRef.current !== 'animating') return prevIndex; // animating 中でなければ何もしない
+
       const nextIndex = prevIndex + 1;
-      const validLocationsCount = locations.filter(loc => loc.lat !== undefined && loc.lng !== undefined).length;
       if (nextIndex >= validLocationsCount - 1) {
-        setIsPlaying(false);
-        return 0;
+        setAnimationPhase('postDelay');
+        setTimeout(() => {
+          if (animationPhaseRef.current === 'postDelay') { // ディレイ中に停止されていないか確認
+            setAnimationPhase('stopped');
+            setIsPlayingUi(false);
+            // setCurrentSegmentIndex(0); // ここで0に戻すと最後の地点にアイコンが残らないので、再生開始時に0にする
+          }
+        }, 1000);
+        return prevIndex; // インデックスは最終地点のものを維持
       }
-      return nextIndex;
+      return nextIndex; // 次のセグメントへ
     });
   }, [locations]);
 
@@ -310,8 +343,8 @@ export default function HomePage() {
   }, []);
 
   const handleSelectLocationFromMap = useCallback((locationId: string) => {
-    if (isPlaying) {
-        setMapError("アニメーション再生中は地点を選択できません。アニメーションを停止してください。");
+    if (animationPhaseRef.current !== 'stopped') { // アニメーション関連の操作中は地点選択不可
+        setMapError("アニメーション中は地点を選択できません。アニメーションを停止してください。");
         return;
     }
     if (pickingLocationId !== null && pickingLocationId !== locationId) {
@@ -325,7 +358,7 @@ export default function HomePage() {
         setPickingLocationId(locationId);
         setMapError(null);
     }
-  }, [isPlaying, pickingLocationId, locations, getPickingLocationLabel]);
+  }, [pickingLocationId, locations, getPickingLocationLabel]); // animationPhaseRefは依存配列に含めない
 
   const handleMapClickForPicking = useCallback((latlng: L.LatLng) => {
     if (pickingLocationId !== null) {
@@ -461,7 +494,7 @@ export default function HomePage() {
             <MapWithNoSSR
               locations={locations}
               transportOptions={initialTransportOptions}
-              isPlaying={isPlaying}
+              animationPhase={animationPhase} // ★ isPlaying の代わりに animationPhase を渡す
               currentSegmentIndex={currentSegmentIndex}
               segmentDurationSeconds={segmentDurationSeconds}
               onSegmentComplete={handleSegmentComplete}
@@ -472,7 +505,7 @@ export default function HomePage() {
             />
           </main>
           <AnimationControls
-            isPlaying={isPlaying}
+            isPlaying={isPlayingUi} // UIボタンの表示は isPlayingUi を使う
             onPlayPause={handlePlayPauseToggle}
             onStop={handleStopAnimation}
             durationSeconds={segmentDurationSeconds}
